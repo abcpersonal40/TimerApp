@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TitanChart Pro</title>
+    <style>
+        body {
+            background-color: #10141C;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+        .container { width: 100%; max-width: 400px; }
+        .card {
+            background: #1c222d;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+        h2 { color: #007AFF; text-align: center; }
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border: none;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        input { background: #2a313d; color: white; border: 1px solid #444; }
+        button { background: #007AFF; color: white; font-weight: bold; cursor: pointer; }
+        .timer-display { font-size: 50px; text-align: center; margin: 15px 0; font-family: monospace; color: #00FFCC; }
+        .btn-stop { background: #FF3B30; }
+        .status { font-size: 12px; color: #888; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>TitanChart Pro</h2>
+
+    <!-- Timer Section -->
+    <div class="card">
+        <h3>Countdown Timer</h3>
+        <input type="number" id="timerInput" placeholder="Enter Seconds" value="10">
+        <div class="timer-display" id="timerDisplay">00:00</div>
+        <button onclick="startTimer()">Start Timer</button>
+        <button class="btn-stop" onclick="stopTimer()">Stop</button>
+    </div>
+
+    <!-- Alarm Section -->
+    <div class="card">
+        <h3>Set Alarm</h3>
+        <input type="time" id="alarmTime">
+        <button onclick="setAlarm()">Set Alarm</button>
+    </div>
+    
+    <p class="status">Background Mode & High Priority Notifications Enabled</p>
+</div>
+
+<!-- Capacitor JS -->
+<script src="https://unpkg.com/@capacitor/core@5.0.0/dist/index.js"></script>
+<script>
+    const { LocalNotifications } = Capacitor.Plugins;
+    const { Haptics } = Capacitor.Plugins;
+
+    let timerInterval = null;
+
+    // ১. নোটিফিকেশন পারমিশন এবং চ্যানেল সেটআপ
+    async function initApp() {
+        await LocalNotifications.requestPermissions();
+        
+        // ভিডিও প্লেয়ারের মতো অ্যাকশন বাটন তৈরি (Stop/Snooze)
+        await LocalNotifications.registerActionTypes({
+            types: [{
+                id: 'ALARM_ACTION_GROUP',
+                actions: [
+                    { id: 'stop', title: 'STOP NOW', destructible: true },
+                    { id: 'snooze', title: 'SNOOZE 5 MIN' }
+                ]
+            }]
+        });
+    }
+    initApp();
+
+    // ২. টাইমার ফাংশন
+    async function startTimer() {
+        let seconds = parseInt(document.getElementById('timerInput').value);
+        if (isNaN(seconds) || seconds <= 0) return;
+
+        if(timerInterval) clearInterval(timerInterval);
+
+        // টাইমার শুরু হওয়ার নোটিফিকেশন
+        await LocalNotifications.schedule({
+            notifications: [{
+                title: "Timer Running",
+                body: "TitanChart Pro is counting down...",
+                id: 1,
+                ongoing: true
+            }]
+        });
+
+        timerInterval = setInterval(() => {
+            seconds--;
+            updateDisplay(seconds);
+            if (seconds <= 0) {
+                clearInterval(timerInterval);
+                ringAlarm("Timer Finished!");
+            }
+        }, 1000);
+    }
+
+    function updateDisplay(sec) {
+        let m = Math.floor(sec / 60);
+        let s = sec % 60;
+        document.getElementById('timerDisplay').innerText = 
+            `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function stopTimer() {
+        clearInterval(timerInterval);
+        LocalNotifications.cancel({ notifications: [{ id: 1 }] });
+        updateDisplay(0);
+    }
+
+    // ৩. অ্যালার্ম ফাংশন
+    async function setAlarm() {
+        const timeInput = document.getElementById('alarmTime').value;
+        if (!timeInput) return;
+
+        const now = new Date();
+        const [hours, minutes] = timeInput.split(':');
+        const alarmDate = new Date();
+        alarmDate.setHours(parseInt(hours));
+        alarmDate.setMinutes(parseInt(minutes));
+        alarmDate.setSeconds(0);
+
+        if (alarmDate <= now) alarmDate.setDate(alarmDate.getDate() + 1);
+
+        await LocalNotifications.schedule({
+            notifications: [{
+                title: "ALARM",
+                body: "Time to wake up! (TitanChart Pro)",
+                id: 100,
+                schedule: { at: alarmDate, allowWhileIdle: true },
+                sound: 'beep.wav',
+                actionTypeId: 'ALARM_ACTION_GROUP'
+            }]
+        });
+        alert("Alarm set for " + timeInput);
+    }
+
+    // ৪. রিং এবং ভাইব্রেশন
+    async function ringAlarm(msg) {
+        await Haptics.vibrate();
+        await LocalNotifications.schedule({
+            notifications: [{
+                title: msg,
+                body: "Tap to stop alarm",
+                id: 101,
+                actionTypeId: 'ALARM_ACTION_GROUP'
+            }]
+        });
+    }
+
+    // নোটিফিকেশন বাটনে ক্লিক করলে কি হবে
+    LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+        if (action.actionId === 'stop') {
+            alert("Alarm Stopped");
+        }
+    });
+</script>
+</body>
+</html>
