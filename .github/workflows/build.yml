@@ -1,0 +1,101 @@
+name: TitanChart Final Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Initialize Capacitor
+        run: |
+          mkdir -p www
+          npx cap add android
+          npx cap sync
+
+      - name: Inject Android Permissions
+        run: |
+          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
+          # Adding Permissions for Alarms
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET" />' $MANIFEST_PATH
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />' $MANIFEST_PATH
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' $MANIFEST_PATH
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WAKE_LOCK" />' $MANIFEST_PATH
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />' $MANIFEST_PATH
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' $MANIFEST_PATH
+        shell: bash
+
+      - name: Generate Keystore
+        run: |
+          keytool -genkey -v \
+            -keystore android/app/release.keystore \
+            -alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storetype JKS \
+            -dname "CN=TitanChart, OU=Dev, O=Org, L=Dhaka, S=Dhaka, C=BD" \
+            -storepass "${{ secrets.SIGNING_STORE_PASSWORD }}" \
+            -keypass "${{ secrets.SIGNING_KEY_PASSWORD }}"
+        shell: bash
+
+      - name: Configure App Signing
+        run: |
+          cat >> android/app/build.gradle <<EOF
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("release.keystore")
+                      storePassword System.getenv("SIGNING_STORE_PASSWORD")
+                      keyAlias System.getenv("SIGNING_KEY_ALIAS")
+                      keyPassword System.getenv("SIGNING_KEY_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+          }
+          EOF
+        shell: bash
+
+      - name: Build Release APK
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TitanChart-Signed-APK
+          path: android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload Keystore (Keep this Safe)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-keystore
+          path: android/app/release.keystore
