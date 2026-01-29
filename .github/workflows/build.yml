@@ -1,4 +1,4 @@
-name: TitanChart Pro Final Signed Build
+name: TitanChart Pro Premium Build
 
 on:
   push:
@@ -51,7 +51,7 @@ jobs:
           }
           EOF
 
-          # 3. www/index.html (Media Controls Logic Included)
+          # 3. www/index.html (Colorful Multiple Cards Logic)
           cat > www/index.html <<EOF
           <!DOCTYPE html>
           <html lang="en">
@@ -60,57 +60,185 @@ jobs:
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <title>TitanChart Pro</title>
               <style>
-                  body { background: #0D1117; color: white; font-family: sans-serif; padding: 20px; text-align: center; }
-                  .card { background: #161B22; padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #30363D; }
-                  button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: none; font-size: 16px; background: #238636; color: white; font-weight: bold; }
-                  input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #30363D; background: #0D1117; color: white; box-sizing: border-box; }
-                  .timer-val { font-size: 50px; color: #7EE787; font-family: monospace; }
+                  :root {
+                      --bg: #0b0e14;
+                      --card-bg: #161b22;
+                      --accent: #58a6ff;
+                      --green: #238636;
+                      --red: #da3633;
+                      --purple: #8957e5;
+                  }
+                  body { background: var(--bg); color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; margin: 0; }
+                  h1 { color: var(--accent); text-align: center; font-size: 24px; margin-bottom: 20px; }
+                  
+                  .input-group { background: var(--card-bg); padding: 15px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #30363d; }
+                  input { width: calc(100% - 24px); padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #30363d; background: #0d1117; color: white; font-size: 16px; }
+                  button { width: 100%; padding: 12px; border-radius: 8px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; color: white; transition: 0.3s; }
+                  
+                  .btn-add { background: var(--accent); margin-top: 10px; }
+                  .btn-alarm { background: var(--purple); }
+
+                  .timer-card { background: linear-gradient(145deg, #1c2128, #161b22); padding: 20px; border-radius: 18px; margin-bottom: 15px; border-left: 5px solid var(--accent); position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+                  .timer-card.paused { border-left-color: #f0883e; }
+                  .timer-info { display: flex; justify-content: space-between; align-items: center; }
+                  .timer-val { font-size: 35px; font-family: 'Courier New', Courier, monospace; color: #7ee787; font-weight: bold; }
+                  .timer-controls { display: flex; gap: 10px; margin-top: 15px; }
+                  .btn-small { padding: 8px; font-size: 12px; }
+                  .pause { background: #f0883e; }
+                  .play { background: var(--green); }
+                  .stop { background: var(--red); }
+                  
+                  .alarm-list { margin-top: 20px; text-align: left; }
+                  .alarm-item { background: #21262d; padding: 10px; border-radius: 8px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; border: 1px dashed #30363d; }
               </style>
           </head>
           <body>
-              <h2>TitanChart Pro</h2>
-              <div class="card">
-                  <h3>Timer Controller</h3>
-                  <input type="number" id="tInput" value="60">
-                  <button onclick="startT()">Start Timer</button>
-                  <div id="tDisplay" class="timer-val">0</div>
-                  <p id="tStatus">Status: Idle</p>
+              <h1>TitanChart Pro</h1>
+
+              <div class="input-group">
+                  <h3>New Timer (Sec)</h3>
+                  <input type="number" id="tInput" placeholder="Enter seconds..." value="60">
+                  <button class="btn-add" onclick="addTimer()">+ Start New Timer</button>
               </div>
+
+              <div id="timersList"></div>
+
+              <div class="input-group">
+                  <h3>Set Alarm</h3>
+                  <input type="time" id="aTime">
+                  <button class="btn-alarm" onclick="addAlarm()">Set New Alarm</button>
+                  <div id="alarmsList" class="alarm-list"></div>
+              </div>
+
               <script src="https://unpkg.com/@capacitor/core@5.0.0/dist/index.js"></script>
               <script>
                   const { LocalNotifications } = Capacitor.Plugins;
-                  let timeLeft = 0, isPaused = false, interval = null;
+                  let timers = {};
+
                   async function init() {
                       await LocalNotifications.requestPermissions();
                       await LocalNotifications.registerActionTypes({
-                          types: [{ id: 'MEDIA', actions: [{id:'pause',title:'PAUSE'},{id:'play',title:'PLAY'},{id:'stop',title:'STOP'}] }]
+                          types: [{ 
+                              id: 'MEDIA_CONTROLS', 
+                              actions: [
+                                  {id:'pause', title:'PAUSE'}, 
+                                  {id:'play', title:'PLAY'}, 
+                                  {id:'stop', title:'STOP', destructible: true}
+                              ] 
+                          }]
                       });
                   }
                   init();
-                  function startT() {
-                      timeLeft = parseInt(document.getElementById('tInput').value);
-                      isPaused = false;
-                      if(interval) clearInterval(interval);
-                      interval = setInterval(async () => {
-                          if(!isPaused) { timeLeft--; updateUI(); updateNotif(); }
-                          if(timeLeft <= 0) { clearInterval(interval); finish(); }
+
+                  function addTimer() {
+                      const sec = parseInt(document.getElementById('tInput').value);
+                      if (!sec) return;
+                      const id = Math.floor(Math.random() * 10000);
+                      timers[id] = { timeLeft: sec, paused: false, interval: null };
+                      
+                      const card = document.createElement('div');
+                      card.className = 'timer-card';
+                      card.id = 'card-' + id;
+                      card.innerHTML = \`
+                          <div class="timer-info">
+                              <span>Timer #\${id}</span>
+                              <div class="timer-val" id="val-\${id}">\${sec}</div>
+                          </div>
+                          <div class="timer-controls">
+                              <button class="btn-small pause" id="btn-p-\${id}" onclick="toggleTimer(\${id})">Pause</button>
+                              <button class="btn-small stop" onclick="stopTimer(\${id})">Stop</button>
+                          </div>
+                      \`;
+                      document.getElementById('timersList').appendChild(card);
+                      startInterval(id);
+                  }
+
+                  function startInterval(id) {
+                      timers[id].interval = setInterval(async () => {
+                          if (!timers[id].paused) {
+                              timers[id].timeLeft--;
+                              document.getElementById('val-' + id).innerText = timers[id].timeLeft;
+                              updateNotification(id);
+                              
+                              if (timers[id].timeLeft <= 0) {
+                                  clearInterval(timers[id].interval);
+                                  finishTimer(id);
+                              }
+                          }
                       }, 1000);
                   }
-                  function updateUI() {
-                      document.getElementById('tDisplay').innerText = timeLeft;
-                      document.getElementById('tStatus').innerText = isPaused ? "Paused" : "Running";
+
+                  function toggleTimer(id) {
+                      timers[id].paused = !timers[id].paused;
+                      const btn = document.getElementById('btn-p-' + id);
+                      const card = document.getElementById('card-' + id);
+                      if (timers[id].paused) {
+                          btn.innerText = 'Play';
+                          btn.className = 'btn-small play';
+                          card.classList.add('paused');
+                      } else {
+                          btn.innerText = 'Pause';
+                          btn.className = 'btn-small pause';
+                          card.classList.remove('paused');
+                      }
+                      updateNotification(id);
                   }
-                  async function updateNotif() {
+
+                  function stopTimer(id) {
+                      clearInterval(timers[id].interval);
+                      document.getElementById('card-' + id).remove();
+                      LocalNotifications.cancel({ notifications: [{ id: id }] });
+                      delete timers[id];
+                  }
+
+                  async function updateNotification(id) {
+                      const t = timers[id];
                       await LocalNotifications.schedule({
-                          notifications: [{ title: isPaused?"Paused":"Running", body: "Time Left: "+timeLeft+"s", id: 1, ongoing: true, actionTypeId: 'MEDIA' }]
+                          notifications: [{
+                              title: t.paused ? "Paused #" + id : "Timer Running #" + id,
+                              body: "Time remaining: " + t.timeLeft + "s",
+                              id: id,
+                              ongoing: true,
+                              actionTypeId: 'MEDIA_CONTROLS',
+                              sound: null // শব্দের কারণে নোটিফিকেশন বারবার পপ-আপ হওয়া আটকাবে
+                          }]
                       });
                   }
-                  function finish() { LocalNotifications.schedule({ notifications: [{title:"Finished", body:"Timer Ended", id:1}] }); }
+
+                  async function finishTimer(id) {
+                      await LocalNotifications.schedule({
+                          notifications: [{ title: "Time Up!", body: "Timer #" + id + " has ended.", id: id + 10000 }]
+                      });
+                      stopTimer(id);
+                  }
+
+                  async function addAlarm() {
+                      const time = document.getElementById('aTime').value;
+                      if (!time) return;
+                      const id = Math.floor(Math.random() * 10000);
+                      const [h, m] = time.split(':');
+                      const d = new Date(); d.setHours(h); d.setMinutes(m); d.setSeconds(0);
+                      if (d <= new Date()) d.setDate(d.getDate() + 1);
+
+                      await LocalNotifications.schedule({
+                          notifications: [{
+                              title: "ALARM", body: "Wake up! It is " + time,
+                              id: id, schedule: { at: d, allowWhileIdle: true },
+                              sound: 'beep.wav'
+                          }]
+                      });
+
+                      const item = document.createElement('div');
+                      item.className = 'alarm-item';
+                      item.innerHTML = \`<span>\${time}</span> <button class="btn-small stop" style="width:60px" onclick="this.parentElement.remove()">X</button>\`;
+                      document.getElementById('alarmsList').appendChild(item);
+                  }
+
                   LocalNotifications.addListener('localNotificationActionPerformed', (e) => {
-                      if(e.actionId==='pause') isPaused=true;
-                      else if(e.actionId==='play') isPaused=false;
-                      else if(e.actionId==='stop') { timeLeft=0; clearInterval(interval); LocalNotifications.cancel({notifications:[{id:1}]}); }
-                      updateUI(); updateNotif();
+                      const id = e.notification.id;
+                      if (!timers[id]) return;
+                      if (e.actionId === 'pause' || e.actionId === 'play') toggleTimer(id);
+                      else if (e.actionId === 'stop') stopTimer(id);
                   });
               </script>
           </body>
@@ -123,15 +251,15 @@ jobs:
           npx cap add android
           npx cap sync
 
-      - name: Android Manifest & Gradle Fix
+      - name: Android Manifest & Permissions
         run: |
-          # Permissions
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET" />' $MANIFEST
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />' $MANIFEST
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' $MANIFEST
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />' $MANIFEST
-          # Cleartext traffic (HTTP) support
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WAKE_LOCK" />' $MANIFEST
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' $MANIFEST
         shell: bash
 
@@ -148,7 +276,7 @@ jobs:
             -storepass "titan123456" \
             -keypass "titan123456"
 
-      - name: Configure Signing in Gradle
+      - name: Configure Gradle Signing
         run: |
           cat >> android/app/build.gradle <<EOF
           android {
@@ -172,14 +300,14 @@ jobs:
           }
           EOF
 
-      - name: Build Signed APK
+      - name: Build Release APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      - name: Upload Signed APK
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TitanChartPro-Signed-APK
+          name: TitanChartPro-Premium-APK
           path: android/app/build/outputs/apk/release/app-release.apk
