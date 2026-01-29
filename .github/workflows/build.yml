@@ -1,4 +1,4 @@
-name: TitanChart Full Auto Build
+name: TitanChart Pro Advanced Build
 
 on:
   push:
@@ -21,12 +21,11 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      # ১. প্রোজেক্ট ফাইলগুলো তৈরি করা (package.json)
       - name: Create Project Files
         run: |
           mkdir -p www
           
-          # Create package.json
+          # 1. package.json
           cat > package.json <<EOF
           {
             "name": "com.titanchart.pro",
@@ -43,23 +42,17 @@ jobs:
           }
           EOF
 
-          # Create capacitor.config.json
+          # 2. capacitor.config.json
           cat > capacitor.config.json <<EOF
           {
             "appId": "com.titanchart.pro",
             "appName": "TitanChartPro",
             "webDir": "www",
-            "bundledWebRuntime": false,
-            "plugins": {
-              "LocalNotifications": {
-                "smallIcon": "ic_stat_icon_config_sample",
-                "iconColor": "#4488FF"
-              }
-            }
+            "bundledWebRuntime": false
           }
           EOF
 
-          # Create www/index.html (The App Code)
+          # 3. www/index.html (Advanced UI with Media-style Notifications)
           cat > www/index.html <<EOF
           <!DOCTYPE html>
           <html lang="en">
@@ -68,79 +61,180 @@ jobs:
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <title>TitanChart Pro</title>
               <style>
-                  body { background: #10141C; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-                  .card { background: #1c222d; padding: 20px; border-radius: 15px; width: 100%; max-width: 350px; margin-top: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
-                  input, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: none; font-size: 16px; }
-                  input { background: #2a313d; color: white; }
-                  button { background: #007AFF; color: white; font-weight: bold; }
-                  .timer { font-size: 40px; text-align: center; color: #00FFCC; margin: 10px 0; }
+                  body { background: #0D1117; color: white; font-family: 'Segoe UI', sans-serif; padding: 20px; text-align: center; }
+                  .container { max-width: 400px; margin: auto; }
+                  .card { background: #161B22; padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #30363D; }
+                  h2 { color: #58A6FF; }
+                  input, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: none; font-size: 16px; box-sizing: border-box; }
+                  input { background: #0D1117; color: white; border: 1px solid #30363D; }
+                  button { background: #238636; color: white; font-weight: bold; cursor: pointer; }
+                  .btn-stop { background: #DA3633; }
+                  .timer-box { font-size: 30px; font-family: monospace; color: #7EE787; margin: 10px 0; }
+                  .active-list { text-align: left; font-size: 14px; background: #0D1117; padding: 10px; border-radius: 8px; }
               </style>
           </head>
           <body>
-              <h2>TitanChart Pro</h2>
-              <div class="card">
-                  <h3>Timer</h3>
-                  <input type="number" id="tInput" placeholder="Seconds" value="10">
-                  <div class="timer" id="tDisplay">00:00</div>
-                  <button onclick="startT()">Start Timer</button>
-              </div>
-              <div class="card">
-                  <h3>Alarm</h3>
-                  <input type="time" id="aTime">
-                  <button onclick="setA()">Set Alarm</button>
+              <div class="container">
+                  <h2>TitanChart Pro</h2>
+                  
+                  <!-- Multi-Timer Section -->
+                  <div class="card">
+                      <h3>Add Timer (Seconds)</h3>
+                      <input type="number" id="tInput" placeholder="Enter seconds..." value="30">
+                      <button onclick="addNewTimer()">Start New Timer</button>
+                      <div id="timerContainer"></div>
+                  </div>
+
+                  <!-- Alarm Section -->
+                  <div class="card">
+                      <h3>Set Exact Alarm</h3>
+                      <input type="time" id="aTime">
+                      <button style="background:#8957E5" onclick="setExactAlarm()">Set Alarm</button>
+                  </div>
+
+                  <div class="active-list" id="log">Status: Ready</div>
               </div>
 
               <script src="https://unpkg.com/@capacitor/core@5.0.0/dist/index.js"></script>
               <script>
                   const { LocalNotifications } = Capacitor.Plugins;
-                  
+                  const timers = {};
+
                   async function init() {
-                      await LocalNotifications.requestPermissions();
+                      const perm = await LocalNotifications.requestPermissions();
+                      if (perm.display !== 'granted') {
+                          alert("Please allow notifications for the alarm to work!");
+                      }
+                      
+                      // Register Action Buttons (Like Media Controls)
                       await LocalNotifications.registerActionTypes({
-                          types: [{ id: 'ALARM_ACTION', actions: [{ id: 'stop', title: 'STOP', destructible: true }] }]
+                          types: [{
+                              id: 'TIMER_CONTROLS',
+                              actions: [
+                                  { id: 'stop', title: 'STOP', destructible: true },
+                                  { id: 'dismiss', title: 'DISMISS' }
+                              ]
+                          }]
                       });
                   }
                   init();
 
-                  function startT() {
-                      let s = document.getElementById('tInput').value;
-                      let interval = setInterval(() => {
-                          s--;
-                          document.getElementById('tDisplay').innerText = s;
-                          if(s <= 0) { 
+                  // ১. মাল্টিপল টাইমার কন্ট্রোলার (ভিডিওর মতো আপডেট হবে)
+                  async function addNewTimer() {
+                      const seconds = parseInt(document.getElementById('tInput').value);
+                      if (!seconds) return;
+
+                      const id = Math.floor(Math.random() * 10000);
+                      timers[id] = seconds;
+
+                      const timerDiv = document.createElement('div');
+                      timerDiv.id = "div-" + id;
+                      timerDiv.innerHTML = \`<div class="timer-box">Timer #\${id}: <span id="val-\${id}">\${seconds}</span>s</div>\`;
+                      document.getElementById('timerContainer').appendChild(timerDiv);
+
+                      runTimerLogic(id);
+                  }
+
+                  async function runTimerLogic(id) {
+                      const interval = setInterval(async () => {
+                          timers[id]--;
+                          
+                          // UI আপডেট
+                          const el = document.getElementById("val-" + id);
+                          if(el) el.innerText = timers[id];
+
+                          // নোটিফিকেশন আপডেট (ভিডিওর মতো ভ্যালু চেঞ্জ হবে)
+                          await LocalNotifications.schedule({
+                              notifications: [{
+                                  title: "Timer Running #" + id,
+                                  body: "Time Remaining: " + timers[id] + " seconds",
+                                  id: id,
+                                  ongoing: true, // সোয়াইপ করে ডিলিট করা যাবে না
+                                  actionTypeId: 'TIMER_CONTROLS'
+                              }]
+                          });
+
+                          if (timers[id] <= 0) {
                               clearInterval(interval);
-                              LocalNotifications.schedule({ notifications: [{ title: "Timer Done", body: "Time up!", id: 1, actionTypeId: 'ALARM_ACTION' }] });
+                              completeTimer(id);
                           }
                       }, 1000);
                   }
 
-                  async function setA() {
-                      const time = document.getElementById('aTime').value;
-                      alert("Alarm set for: " + time);
+                  async function completeTimer(id) {
+                      await LocalNotifications.schedule({
+                          notifications: [{
+                              title: "Timer Finished!",
+                              body: "Timer #" + id + " has ended.",
+                              id: id,
+                              sound: 'beep.wav'
+                          }]
+                      });
+                      document.getElementById("div-" + id).remove();
                   }
+
+                  // ২. অ্যালার্ম ফিক্স (Exact Alarm)
+                  async function setExactAlarm() {
+                      const timeVal = document.getElementById('aTime').value;
+                      if (!timeVal) return;
+
+                      const now = new Date();
+                      const [h, m] = timeVal.split(':');
+                      const alarmDate = new Date();
+                      alarmDate.setHours(h);
+                      alarmDate.setMinutes(m);
+                      alarmDate.setSeconds(0);
+
+                      if (alarmDate <= now) alarmDate.setDate(alarmDate.getDate() + 1);
+
+                      await LocalNotifications.schedule({
+                          notifications: [{
+                              title: "ALARM - TitanChart",
+                              body: "It is " + timeVal + "! Wake up!",
+                              id: 999,
+                              schedule: { at: alarmDate, allowWhileIdle: true },
+                              sound: 'beep.wav',
+                              extra: "ALARM_CLOCK"
+                          }]
+                      });
+                      document.getElementById('log').innerText = "Alarm set for " + timeVal;
+                      alert("Alarm set successfully!");
+                  }
+
+                  // ৩. নোটিফিকেশন বাটন লিসেনার (STOP বাটন কাজ করবে)
+                  LocalNotifications.addListener('localNotificationActionPerformed', (payload) => {
+                      const id = payload.notification.id;
+                      if (payload.actionId === 'stop') {
+                          // টাইমার বন্ধ করা
+                          timers[id] = 0;
+                          LocalNotifications.cancel({ notifications: [{ id: id }] });
+                          alert("Timer " + id + " Stopped from Notification");
+                      }
+                  });
               </script>
           </body>
           </html>
           EOF
 
-      # ২. ইনভায়রনমেন্ট সেটআপ
-      - name: Install Dependencies and Init Capacitor
+      - name: Install Dependencies
         run: |
           npm install
           npx cap add android
           npx cap sync
 
-      # ৩. অ্যান্ড্রয়েড পারমিশন ইনজেকশন
-      - name: Inject Android Permissions
+      - name: Inject Android Permissions & Features
         run: |
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
+          # permissions
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />' $MANIFEST_PATH
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />' $MANIFEST_PATH
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' $MANIFEST_PATH
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />' $MANIFEST_PATH
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WAKE_LOCK" />' $MANIFEST_PATH
+          # application config
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' $MANIFEST_PATH
         shell: bash
 
-      # ৪. Keystore জেনারেট করা (Password: titan123456)
       - name: Generate Keystore
         run: |
           keytool -genkey -v \
@@ -153,10 +247,8 @@ jobs:
             -dname "CN=Titan, O=Dev, C=BD" \
             -storepass "titan123456" \
             -keypass "titan123456"
-        shell: bash
 
-      # ৫. Gradle কনফিগার করা
-      - name: Configure Gradle Signing
+      - name: Configure Gradle
         run: |
           cat >> android/app/build.gradle <<EOF
           android {
@@ -175,24 +267,15 @@ jobs:
               }
           }
           EOF
-        shell: bash
 
-      # ৬. বিল্ড রিলিজ APK
       - name: Build Release APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      # ৭. আউটপুট ফাইল আপলোড
-      - name: Upload Signed APK
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: TitanChart-Signed-APK
+          name: TitanChartPro-Advanced
           path: android/app/build/outputs/apk/release/app-release.apk
-
-      - name: Save Keystore File
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-keystore
-          path: android/app/release.keystore
