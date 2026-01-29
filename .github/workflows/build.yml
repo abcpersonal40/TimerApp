@@ -1,4 +1,4 @@
-name: TitanChart Media Style Build
+name: TitanChart Pro Final Signed Build
 
 on:
   push:
@@ -24,7 +24,6 @@ jobs:
       - name: Create Project Files
         run: |
           mkdir -p www
-          
           # 1. package.json
           cat > package.json <<EOF
           {
@@ -52,7 +51,7 @@ jobs:
           }
           EOF
 
-          # 3. www/index.html (Advanced Controller Logic)
+          # 3. www/index.html (Media Controls Logic Included)
           cat > www/index.html <<EOF
           <!DOCTYPE html>
           <html lang="en">
@@ -63,139 +62,56 @@ jobs:
               <style>
                   body { background: #0D1117; color: white; font-family: sans-serif; padding: 20px; text-align: center; }
                   .card { background: #161B22; padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #30363D; }
-                  input, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: none; font-size: 16px; }
-                  button { background: #238636; color: white; font-weight: bold; cursor: pointer; }
-                  .timer-val { font-size: 40px; color: #7EE787; font-family: monospace; }
-                  .status { font-size: 14px; color: #8b949e; margin-top: 10px; }
+                  button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: none; font-size: 16px; background: #238636; color: white; font-weight: bold; }
+                  input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #30363D; background: #0D1117; color: white; box-sizing: border-box; }
+                  .timer-val { font-size: 50px; color: #7EE787; font-family: monospace; }
               </style>
           </head>
           <body>
-              <div class="container">
-                  <h2 style="color: #58A6FF;">TitanChart Pro</h2>
-                  <div class="card">
-                      <h3>Media Style Timer</h3>
-                      <input type="number" id="tInput" placeholder="Seconds" value="60">
-                      <button onclick="startNewTimer()">Start Timer</button>
-                      <div id="timerDisplay" class="timer-val">0</div>
-                      <div id="statusText" class="status">Status: Idle</div>
-                  </div>
-                  
-                  <div class="card">
-                      <h3>Exact Alarm</h3>
-                      <input type="time" id="aTime">
-                      <button style="background:#8957E5" onclick="setAlarm()">Set Alarm</button>
-                  </div>
+              <h2>TitanChart Pro</h2>
+              <div class="card">
+                  <h3>Timer Controller</h3>
+                  <input type="number" id="tInput" value="60">
+                  <button onclick="startT()">Start Timer</button>
+                  <div id="tDisplay" class="timer-val">0</div>
+                  <p id="tStatus">Status: Idle</p>
               </div>
-
               <script src="https://unpkg.com/@capacitor/core@5.0.0/dist/index.js"></script>
               <script>
                   const { LocalNotifications } = Capacitor.Plugins;
-                  let timerId = 123;
-                  let timeLeft = 0;
-                  let isPaused = false;
-                  let interval = null;
-
+                  let timeLeft = 0, isPaused = false, interval = null;
                   async function init() {
                       await LocalNotifications.requestPermissions();
-                      
-                      // ১. নোটিফিকেশন বাটন সেটআপ (Play, Pause, Stop)
                       await LocalNotifications.registerActionTypes({
-                          types: [{
-                              id: 'TIMER_CONTROLS',
-                              actions: [
-                                  { id: 'pause', title: 'PAUSE' },
-                                  { id: 'resume', title: 'RESUME/PLAY' },
-                                  { id: 'stop', title: 'STOP', destructible: true }
-                              ]
-                          }]
+                          types: [{ id: 'MEDIA', actions: [{id:'pause',title:'PAUSE'},{id:'play',title:'PLAY'},{id:'stop',title:'STOP'}] }]
                       });
                   }
                   init();
-
-                  function startNewTimer() {
+                  function startT() {
                       timeLeft = parseInt(document.getElementById('tInput').value);
-                      if(!timeLeft) return;
                       isPaused = false;
                       if(interval) clearInterval(interval);
-                      runLogic();
-                  }
-
-                  function runLogic() {
                       interval = setInterval(async () => {
-                          if (!isPaused) {
-                              timeLeft--;
-                              updateUI();
-                              updateNotification();
-                          }
-                          if (timeLeft <= 0) {
-                              clearInterval(interval);
-                              finishTimer();
-                          }
+                          if(!isPaused) { timeLeft--; updateUI(); updateNotif(); }
+                          if(timeLeft <= 0) { clearInterval(interval); finish(); }
                       }, 1000);
                   }
-
                   function updateUI() {
-                      document.getElementById('timerDisplay').innerText = timeLeft;
-                      document.getElementById('statusText').innerText = isPaused ? "Paused" : "Running...";
+                      document.getElementById('tDisplay').innerText = timeLeft;
+                      document.getElementById('tStatus').innerText = isPaused ? "Paused" : "Running";
                   }
-
-                  async function updateNotification() {
+                  async function updateNotif() {
                       await LocalNotifications.schedule({
-                          notifications: [{
-                              title: isPaused ? "Timer Paused" : "Timer Running...",
-                              body: "Time Remaining: " + timeLeft + "s",
-                              id: timerId,
-                              ongoing: true,
-                              actionTypeId: 'TIMER_CONTROLS'
-                          }]
+                          notifications: [{ title: isPaused?"Paused":"Running", body: "Time Left: "+timeLeft+"s", id: 1, ongoing: true, actionTypeId: 'MEDIA' }]
                       });
                   }
-
-                  async function finishTimer() {
-                      await LocalNotifications.schedule({
-                          notifications: [{ title: "Time Up!", body: "Your timer has finished", id: timerId }]
-                      });
-                  }
-
-                  // ২. নোটিফিকেশন বাটন ক্লিক হ্যান্ডলার (Play/Pause/Stop)
-                  LocalNotifications.addListener('localNotificationActionPerformed', (payload) => {
-                      const action = payload.actionId;
-                      if (action === 'pause') {
-                          isPaused = true;
-                          updateUI();
-                          updateNotification();
-                      } else if (action === 'resume') {
-                          isPaused = false;
-                          updateUI();
-                          updateNotification();
-                      } else if (action === 'stop') {
-                          timeLeft = 0;
-                          isPaused = false;
-                          clearInterval(interval);
-                          updateUI();
-                          LocalNotifications.cancel({ notifications: [{ id: timerId }] });
-                      }
+                  function finish() { LocalNotifications.schedule({ notifications: [{title:"Finished", body:"Timer Ended", id:1}] }); }
+                  LocalNotifications.addListener('localNotificationActionPerformed', (e) => {
+                      if(e.actionId==='pause') isPaused=true;
+                      else if(e.actionId==='play') isPaused=false;
+                      else if(e.actionId==='stop') { timeLeft=0; clearInterval(interval); LocalNotifications.cancel({notifications:[{id:1}]}); }
+                      updateUI(); updateNotif();
                   });
-
-                  // ৩. অ্যালার্ম লজিক
-                  async function setAlarm() {
-                      const time = document.getElementById('aTime').value;
-                      if (!time) return;
-                      const [h, m] = time.split(':');
-                      const d = new Date();
-                      d.setHours(h); d.setMinutes(m); d.setSeconds(0);
-                      if (d <= new Date()) d.setDate(d.getDate() + 1);
-
-                      await LocalNotifications.schedule({
-                          notifications: [{
-                              title: "ALARM!", body: "Wake up! It is " + time,
-                              id: 999,
-                              schedule: { at: d, allowWhileIdle: true },
-                              sound: 'beep.wav'
-                          }]
-                      });
-                      alert("Alarm set!");
-                  }
               </script>
           </body>
           </html>
@@ -207,15 +123,16 @@ jobs:
           npx cap add android
           npx cap sync
 
-      - name: Inject Android Permissions
+      - name: Android Manifest & Gradle Fix
         run: |
-          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />' $MANIFEST_PATH
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />' $MANIFEST_PATH
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' $MANIFEST_PATH
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />' $MANIFEST_PATH
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WAKE_LOCK" />' $MANIFEST_PATH
-          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' $MANIFEST_PATH
+          # Permissions
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET" />' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />' $MANIFEST
+          # Cleartext traffic (HTTP) support
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' $MANIFEST
         shell: bash
 
       - name: Generate Keystore
@@ -231,7 +148,7 @@ jobs:
             -storepass "titan123456" \
             -keypass "titan123456"
 
-      - name: Configure Gradle
+      - name: Configure Signing in Gradle
         run: |
           cat >> android/app/build.gradle <<EOF
           android {
@@ -241,24 +158,28 @@ jobs:
                       storePassword "titan123456"
                       keyAlias "titanchart"
                       keyPassword "titan123456"
+                      v1SigningEnabled true
+                      v2SigningEnabled true
                   }
               }
               buildTypes {
                   release {
                       signingConfig signingConfigs.release
+                      minifyEnabled false
+                      shrinkResources false
                   }
               }
           }
           EOF
 
-      - name: Build Release APK
+      - name: Build Signed APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      - name: Upload Artifacts
+      - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: TitanChartPro-Media-App
+          name: TitanChartPro-Signed-APK
           path: android/app/build/outputs/apk/release/app-release.apk
