@@ -1,4 +1,4 @@
-name: TitanChart Pro Custom Foreground Build
+name: TitanChart Pro Foreground Build
 
 on:
   push:
@@ -26,7 +26,6 @@ jobs:
           mkdir -p www
           mkdir -p android/app/src/main/java/com/titanchart/pro/foreground/
           
-          # 1. package.json
           cat > package.json <<EOF
           {
             "name": "com.titanchart.pro",
@@ -41,7 +40,6 @@ jobs:
           }
           EOF
 
-          # 2. capacitor.config.json
           cat > capacitor.config.json <<EOF
           {
             "appId": "com.titanchart.pro",
@@ -55,28 +53,28 @@ jobs:
         run: |
           cat > www/index.html <<EOF
           <!DOCTYPE html>
-          <html lang="en">
+          <html>
           <head>
               <meta charset="UTF-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <title>TitanChart Pro</title>
               <style>
-                  body { background: #0b0e14; color: white; font-family: sans-serif; text-align: center; padding: 50px; }
-                  .card { background: #161b22; padding: 20px; border-radius: 15px; border: 1px solid #30363d; }
-                  input { width: 80%; padding: 10px; margin: 10px; border-radius: 5px; }
-                  button { width: 85%; padding: 12px; margin: 5px; border-radius: 5px; border: none; font-weight: bold; cursor: pointer; }
-                  .btn-start { background: #238636; color: white; }
-                  .btn-stop { background: #da3633; color: white; }
-                  #display { font-size: 40px; margin: 20px; color: #58a6ff; }
+                  body { background: #0b0e14; color: white; font-family: sans-serif; text-align: center; padding: 30px; }
+                  .card { background: #161b22; padding: 25px; border-radius: 20px; border: 1px solid #30363d; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+                  input { width: 80%; padding: 12px; margin: 15px; border-radius: 10px; border: 1px solid #30363d; background: #0d1117; color: white; font-size: 18px; }
+                  button { width: 90%; padding: 15px; margin: 8px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.2s; }
+                  .btn-start { background: #238636; }
+                  .btn-stop { background: #da3633; }
+                  #display { font-size: 60px; margin: 25px; color: #7ee787; font-family: monospace; }
               </style>
           </head>
           <body>
               <div class="card">
-                  <h2>TitanChart Pro</h2>
+                  <h2 style="color: #58a6ff;">TitanChart Pro</h2>
                   <input type="number" id="secInput" value="60">
-                  <div id="display">0</div>
-                  <button class="btn-start" onclick="startTimer()">Start Foreground Timer</button>
-                  <button class="btn-stop" onclick="stopTimer()">Stop</button>
+                  <div id="display">00</div>
+                  <button class="btn-start" onclick="startTimer()">START TIMER</button>
+                  <button class="btn-stop" onclick="stopTimer()">STOP</button>
               </div>
 
               <script src="https://unpkg.com/@capacitor/core@5.0.0/dist/index.js"></script>
@@ -87,10 +85,9 @@ jobs:
 
                   async function startTimer() {
                       timeLeft = parseInt(document.getElementById('secInput').value);
-                      if(isNaN(timeLeft)) return;
+                      if(isNaN(timeLeft) || timeLeft <= 0) return;
 
-                      // ১. কাস্টম প্লাগিন দিয়ে সার্ভিস স্টার্ট
-                      await TimerService.start({ text: timeLeft + " seconds remaining" });
+                      await TimerService.start({ text: "Timer started: " + timeLeft + "s" });
 
                       if(timerInt) clearInterval(timerInt);
                       timerInt = setInterval(async () => {
@@ -101,15 +98,15 @@ jobs:
                               clearInterval(timerInt);
                               await TimerService.update({ text: "Time Up!" });
                           } else {
-                              // ২. প্রতি সেকেন্ডে সাইলেন্ট আপডেট (নো ব্লিংকিং)
-                              await TimerService.update({ text: timeLeft + " seconds remaining" });
+                              // সাইলেন্টলি আপডেট হবে, নোটিফিকেশন বারবার আসবে না
+                              await TimerService.update({ text: "Remaining: " + timeLeft + " seconds" });
                           }
                       }, 1000);
                   }
 
                   async function stopTimer() {
                       clearInterval(timerInt);
-                      document.getElementById('display').innerText = "0";
+                      document.getElementById('display').innerText = "00";
                       await TimerService.stop();
                   }
               </script>
@@ -117,9 +114,10 @@ jobs:
           </html>
           EOF
 
-      - name: Create Custom Android Plugin (Java)
+      - name: Create Custom Android Plugin
         run: |
           PKG_PATH="android/app/src/main/java/com/titanchart/pro/foreground"
+          mkdir -p $PKG_PATH
           
           # TimerService.java
           cat > $PKG_PATH/TimerService.java <<EOF
@@ -144,23 +142,22 @@ jobs:
               @Override
               public int onStartCommand(Intent intent, int flags, int startId) {
                   String text = intent.getStringExtra("text");
-                  Notification notification = buildNotification(text != null ? text : "Timer running");
-                  startForeground(NOTIF_ID, notification);
+                  startForeground(NOTIF_ID, buildNotif(text != null ? text : "Running..."));
                   return START_STICKY;
               }
 
               public void update(String text) {
                   NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                  nm.notify(NOTIF_ID, buildNotification(text));
+                  nm.notify(NOTIF_ID, buildNotif(text));
               }
 
-              private Notification buildNotification(String text) {
+              private Notification buildNotif(String text) {
                   return new NotificationCompat.Builder(this, CHANNEL_ID)
                           .setContentTitle("TitanChart Pro")
                           .setContentText(text)
                           .setSmallIcon(android.R.drawable.ic_media_play)
                           .setOngoing(true)
-                          .setOnlyAlertOnce(true) // 🔥 গুরুত্বপূর্ণ: ব্লিংক আটকাবে
+                          .setOnlyAlertOnce(true) // শব্দ বা ব্লিংক হবে না
                           .setPriority(NotificationCompat.PRIORITY_LOW)
                           .build();
               }
@@ -170,9 +167,9 @@ jobs:
 
               private void createChannel() {
                   if (Build.VERSION.SDK_INT >= 26) {
-                      NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Timer", NotificationManager.IMPORTANCE_LOW);
-                      channel.setSound(null, null);
-                      getSystemService(NotificationManager.class).createNotificationChannel(channel);
+                      NotificationChannel c = new NotificationChannel(CHANNEL_ID, "Timer", NotificationManager.IMPORTANCE_LOW);
+                      c.setSound(null, null);
+                      getSystemService(NotificationManager.class).createNotificationChannel(c);
                   }
               }
           }
@@ -195,22 +192,16 @@ jobs:
           public class TimerPlugin extends Plugin {
               @PluginMethod
               public void start(PluginCall call) {
-                  String text = call.getString("text");
                   Intent i = new Intent(getContext(), TimerService.class);
-                  i.putExtra("text", text);
+                  i.putExtra("text", call.getString("text"));
                   getContext().startForegroundService(i);
                   call.resolve();
               }
-
               @PluginMethod
               public void update(PluginCall call) {
-                  String text = call.getString("text");
-                  if (TimerServiceHolder.service != null) {
-                      TimerServiceHolder.service.update(text);
-                  }
+                  if (TimerServiceHolder.service != null) TimerServiceHolder.service.update(call.getString("text"));
                   call.resolve();
               }
-
               @PluginMethod
               public void stop(PluginCall call) {
                   getContext().stopService(new Intent(getContext(), TimerService.class));
@@ -222,14 +213,16 @@ jobs:
       - name: Install Dependencies and Cap Sync
         run: |
           npm install
-          npx cap add android
+          # যদি android ফোল্ডার না থাকে তবেই অ্যাড করবে
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
           npx cap sync
 
       - name: Register Plugin in MainActivity
         run: |
-          MAIN_ACTIVITY="android/app/src/main/java/com/titanchart/pro/MainActivity.java"
-          # MainActivity আপডেট করে প্লাগিন রেজিস্টার করা
-          cat > $MAIN_ACTIVITY <<EOF
+          mkdir -p android/app/src/main/java/com/titanchart/pro/
+          cat > android/app/src/main/java/com/titanchart/pro/MainActivity.java <<EOF
           package com.titanchart.pro;
           import android.os.Bundle;
           import com.getcapacitor.BridgeActivity;
@@ -247,20 +240,18 @@ jobs:
       - name: Android Manifest & Permissions
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-          # Permissions
+          # পারমিশন অ্যাড করা
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />' $MANIFEST
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' $MANIFEST
           
-          # Service Declaration
-          sed -i '/<application/a \        <service android:name=".foreground.TimerService" android:exported="false" android:foregroundServiceType="mediaPlayback" />' $MANIFEST
+          # সার্ভিস ডিক্লেয়ার করা
+          sed -i '/<application/a \        <service android:name=".foreground.TimerService" android:exported="false" android:foregroundServiceType="specialUse" />' $MANIFEST
         shell: bash
 
       - name: Build Release APK
         run: |
-          # কি-স্টোর জেনারেট
           keytool -genkey -v -keystore android/app/release.keystore -alias "titan" -keyalg RSA -keysize 2048 -validity 10000 -storetype JKS -dname "CN=Titan, O=Dev, C=BD" -storepass "titan123456" -keypass "titan123456"
           
-          # গ্রেডল কনফিগ
           cat >> android/app/build.gradle <<EOF
           android {
               signingConfigs {
@@ -284,5 +275,5 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TitanChart-Foreground-Plugin-APK
+          name: TitanChart-Stable-Timer-APK
           path: android/app/build/outputs/apk/release/app-release.apk
