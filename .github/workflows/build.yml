@@ -1,4 +1,4 @@
-name: TitanChart Final Build
+name: TitanChart Full Auto Build
 
 on:
   push:
@@ -11,62 +11,161 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js and Java
         uses: actions/setup-node@v4
         with:
           node-version: 18
       
-      - name: Setup Java
-        uses: actions/setup-java@v3
+      - uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
-      
-      - name: Install Dependencies
-        run: npm install
 
-      - name: Initialize Capacitor
+      # ১. প্রোজেক্ট ফাইলগুলো তৈরি করা (package.json)
+      - name: Create Project Files
         run: |
           mkdir -p www
+          
+          # Create package.json
+          cat > package.json <<EOF
+          {
+            "name": "com.titanchart.pro",
+            "version": "1.0.0",
+            "dependencies": {
+              "@capacitor/android": "^5.0.0",
+              "@capacitor/core": "^5.0.0",
+              "@capacitor/local-notifications": "^5.0.0",
+              "@capacitor/haptics": "^5.0.0"
+            },
+            "devDependencies": {
+              "@capacitor/cli": "^5.0.0"
+            }
+          }
+          EOF
+
+          # Create capacitor.config.json
+          cat > capacitor.config.json <<EOF
+          {
+            "appId": "com.titanchart.pro",
+            "appName": "TitanChartPro",
+            "webDir": "www",
+            "bundledWebRuntime": false,
+            "plugins": {
+              "LocalNotifications": {
+                "smallIcon": "ic_stat_icon_config_sample",
+                "iconColor": "#4488FF"
+              }
+            }
+          }
+          EOF
+
+          # Create www/index.html (The App Code)
+          cat > www/index.html <<EOF
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>TitanChart Pro</title>
+              <style>
+                  body { background: #10141C; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+                  .card { background: #1c222d; padding: 20px; border-radius: 15px; width: 100%; max-width: 350px; margin-top: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+                  input, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: none; font-size: 16px; }
+                  input { background: #2a313d; color: white; }
+                  button { background: #007AFF; color: white; font-weight: bold; }
+                  .timer { font-size: 40px; text-align: center; color: #00FFCC; margin: 10px 0; }
+              </style>
+          </head>
+          <body>
+              <h2>TitanChart Pro</h2>
+              <div class="card">
+                  <h3>Timer</h3>
+                  <input type="number" id="tInput" placeholder="Seconds" value="10">
+                  <div class="timer" id="tDisplay">00:00</div>
+                  <button onclick="startT()">Start Timer</button>
+              </div>
+              <div class="card">
+                  <h3>Alarm</h3>
+                  <input type="time" id="aTime">
+                  <button onclick="setA()">Set Alarm</button>
+              </div>
+
+              <script src="https://unpkg.com/@capacitor/core@5.0.0/dist/index.js"></script>
+              <script>
+                  const { LocalNotifications } = Capacitor.Plugins;
+                  
+                  async function init() {
+                      await LocalNotifications.requestPermissions();
+                      await LocalNotifications.registerActionTypes({
+                          types: [{ id: 'ALARM_ACTION', actions: [{ id: 'stop', title: 'STOP', destructible: true }] }]
+                      });
+                  }
+                  init();
+
+                  function startT() {
+                      let s = document.getElementById('tInput').value;
+                      let interval = setInterval(() => {
+                          s--;
+                          document.getElementById('tDisplay').innerText = s;
+                          if(s <= 0) { 
+                              clearInterval(interval);
+                              LocalNotifications.schedule({ notifications: [{ title: "Timer Done", body: "Time up!", id: 1, actionTypeId: 'ALARM_ACTION' }] });
+                          }
+                      }, 1000);
+                  }
+
+                  async function setA() {
+                      const time = document.getElementById('aTime').value;
+                      alert("Alarm set for: " + time);
+                  }
+              </script>
+          </body>
+          </html>
+          EOF
+
+      # ২. ইনভায়রনমেন্ট সেটআপ
+      - name: Install Dependencies and Init Capacitor
+        run: |
+          npm install
           npx cap add android
           npx cap sync
 
+      # ৩. অ্যান্ড্রয়েড পারমিশন ইনজেকশন
       - name: Inject Android Permissions
         run: |
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
-          # Adding Permissions for Alarms
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET" />' $MANIFEST_PATH
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />' $MANIFEST_PATH
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' $MANIFEST_PATH
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WAKE_LOCK" />' $MANIFEST_PATH
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />' $MANIFEST_PATH
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' $MANIFEST_PATH
         shell: bash
 
+      # ৪. Keystore জেনারেট করা (Password: titan123456)
       - name: Generate Keystore
         run: |
           keytool -genkey -v \
             -keystore android/app/release.keystore \
-            -alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+            -alias "titanchart" \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
             -storetype JKS \
-            -dname "CN=TitanChart, OU=Dev, O=Org, L=Dhaka, S=Dhaka, C=BD" \
-            -storepass "${{ secrets.SIGNING_STORE_PASSWORD }}" \
-            -keypass "${{ secrets.SIGNING_KEY_PASSWORD }}"
+            -dname "CN=Titan, O=Dev, C=BD" \
+            -storepass "titan123456" \
+            -keypass "titan123456"
         shell: bash
 
-      - name: Configure App Signing
+      # ৫. Gradle কনফিগার করা
+      - name: Configure Gradle Signing
         run: |
           cat >> android/app/build.gradle <<EOF
           android {
               signingConfigs {
                   release {
                       storeFile file("release.keystore")
-                      storePassword System.getenv("SIGNING_STORE_PASSWORD")
-                      keyAlias System.getenv("SIGNING_KEY_ALIAS")
-                      keyPassword System.getenv("SIGNING_KEY_PASSWORD")
+                      storePassword "titan123456"
+                      keyAlias "titanchart"
+                      keyPassword "titan123456"
                   }
               }
               buildTypes {
@@ -78,23 +177,21 @@ jobs:
           EOF
         shell: bash
 
+      # ৬. বিল্ড রিলিজ APK
       - name: Build Release APK
-        env:
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      - name: Upload APK
+      # ৭. আউটপুট ফাইল আপলোড
+      - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: TitanChart-Signed-APK
           path: android/app/build/outputs/apk/release/app-release.apk
 
-      - name: Upload Keystore (Keep this Safe)
+      - name: Save Keystore File
         uses: actions/upload-artifact@v4
         with:
           name: release-keystore
