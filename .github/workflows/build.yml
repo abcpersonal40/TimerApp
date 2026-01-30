@@ -179,18 +179,18 @@ jobs:
           storeFile=release-key.jks
           EOF
           
-          # 3. Modify build.gradle to use the signing config properly
+          # 3. Modify build.gradle (CORRECTED ORDER: PLUGINS FIRST)
           cat > android/app/build.gradle <<EOF
-          def keystoreProperties = new Properties()
-          def keystorePropertiesFile = rootProject.file('key.properties')
-          if (keystorePropertiesFile.exists()) {
-              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-          }
-
           plugins {
               id "com.android.application"
               id "kotlin-android"
               id "dev.flutter.flutter-gradle-plugin"
+          }
+
+          def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file('key.properties')
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
           }
 
           android {
