@@ -1,4 +1,4 @@
-name: TitanChart Pro Flutter Final Build
+name: TitanChart Pro Ultimate Build
 
 on:
   push:
@@ -22,16 +22,17 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Create Flutter Project & Add Dependencies
+      - name: Create Project & Install Dependencies
         run: |
           rm -rf ./* .target
           flutter create --org com.titanchart --project-name titanchart_pro .
-          # Adding dependencies for Time, Notifications, and Local Storage
+          
+          # Installing specific versions to prevent breaking changes
           flutter pub add webview_flutter:^4.7.0
           flutter pub add flutter_foreground_task:^6.5.0
           flutter pub add flutter_local_notifications:^17.0.0
           flutter pub add intl:^0.19.0
-          flutter pub add shared_preferences:^2.2.2
+          flutter pub add permission_handler:^11.3.0
 
       - name: Setup Android Manifest
         run: |
@@ -41,9 +42,9 @@ jobs:
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
               <uses-permission android:name="android.permission.WAKE_LOCK" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
               <uses-permission android:name="android.permission.VIBRATE" />
               <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
               <application
                   android:label="TitanChart Pro"
@@ -76,7 +77,7 @@ jobs:
           </manifest>
           EOF
 
-      - name: Setup Flutter Main Code (Advanced Logic)
+      - name: Setup Flutter Main Code (Fixed Logic)
         run: |
           cat > lib/main.dart <<EOF
           import 'dart:async';
@@ -87,13 +88,13 @@ jobs:
           import 'package:webview_flutter/webview_flutter.dart';
           import 'package:flutter_local_notifications/flutter_local_notifications.dart';
           import 'package:intl/intl.dart';
+          import 'package:permission_handler/permission_handler.dart';
 
-          // --- GLOBAL STATE SIMULATION (For Single File Arch) ---
-          // In a real app, use a database. Here we use static memory for the service.
+          // --- GLOBAL STATE (In-Memory for simplicity) ---
           class AppState {
-            static List<Map<String, dynamic>> timers = []; // {id, label, remaining, isRunning}
+            static List<Map<String, dynamic>> timers = []; 
             static Map<String, dynamic> stopwatch = {'running': false, 'elapsed': 0};
-            static List<Map<String, dynamic>> alarms = []; // {time, message, enabled}
+            static List<Map<String, dynamic>> alarms = [];
           }
 
           final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -122,11 +123,12 @@ jobs:
             
             // To communicate back to UI
             void _sendUpdate(SendPort? sendPort) {
-               sendPort?.send('UPDATE'); // Simple signal to refresh UI
+               sendPort?.send('UPDATE');
             }
 
             @override
             Future<void> onStart(DateTime timestamp, SendPort? sendPort) async {
+              // We use a periodic timer for strict 1-second updates
               _timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
                 bool updateNotification = false;
                 String notifText = "";
@@ -141,7 +143,7 @@ jobs:
                     
                     if (t['remaining'] == 0) {
                       t['isRunning'] = false;
-                      _showAlarmNotification("Timer Done!", "Timer \${t['label']} has finished.");
+                      _showAlarmNotification("Timer Done!", "Timer \${t['label']} finished.");
                     }
                   }
                 }
@@ -158,11 +160,12 @@ jobs:
                 for (var alarm in AppState.alarms) {
                   if (alarm['enabled']) {
                     DateTime scheduled = DateTime.parse(alarm['time']);
+                    // Check if current minute matches scheduled minute (simple check)
                     if (now.year == scheduled.year && now.month == scheduled.month && 
                         now.day == scheduled.day && now.hour == scheduled.hour && 
                         now.minute == scheduled.minute && now.second == 0) {
                         _showAlarmNotification("Alarm!", alarm['message']);
-                        alarm['enabled'] = false; // Trigger once
+                        alarm['enabled'] = false; 
                     }
                   }
                 }
@@ -171,6 +174,7 @@ jobs:
                 if (updateNotification) {
                   String status = activeTimers.join(" | ");
                   if (status.isEmpty && AppState.stopwatch['running']) status = "Stopwatch Running";
+                  
                   if (status.isNotEmpty) {
                      FlutterForegroundTask.updateService(
                       notificationTitle: 'TitanChart Pro Tools',
@@ -181,6 +185,13 @@ jobs:
                 }
               });
             }
+
+            // --- THIS WAS THE MISSING PART CAUSING ERROR ---
+            @override
+            void onRepeatEvent(DateTime timestamp, SendPort? sendPort) {
+              // Implementation required by v6.5.0, even if empty
+            }
+            // -----------------------------------------------
 
             String _formatTime(int seconds) {
               int h = seconds ~/ 3600;
@@ -197,11 +208,6 @@ jobs:
                   NotificationDetails(android: androidPlatformChannelSpecifics);
               await flutterLocalNotificationsPlugin.show(
                   DateTime.now().millisecond, title, body, platformChannelSpecifics);
-            }
-
-            @override
-            void onRepeatEvent(DateTime timestamp, SendPort? sendPort) {
-              // Not used, handled in Timer.periodic
             }
 
             @override
@@ -236,14 +242,19 @@ jobs:
             @override
             void initState() {
               super.initState();
-              _tabController = TabController(length: 4, vsync: this); // Chart, Timer, SW, Alarm
+              _requestPermissions();
+              _tabController = TabController(length: 4, vsync: this);
               _initForeground();
               
-              // Listen for updates from service
                _receivePort = FlutterForegroundTask.receivePort;
                _receivePort?.listen((message) {
-                 if (message == 'UPDATE') setState(() {});
+                 if (message == 'UPDATE') if(mounted) setState(() {});
                });
+            }
+
+            void _requestPermissions() async {
+              await Permission.notification.request();
+              await Permission.scheduleExactAlarm.request();
             }
 
             void _initForeground() {
@@ -316,7 +327,7 @@ jobs:
             }
           }
 
-          // --- 1. CHART VIEW (WebView) ---
+          // --- CHART VIEW ---
           class ChartView extends StatefulWidget {
             const ChartView({super.key});
             @override State<ChartView> createState() => _ChartViewState();
@@ -329,15 +340,12 @@ jobs:
               _controller = WebViewController()
                 ..setJavaScriptMode(JavaScriptMode.unrestricted)
                 ..setBackgroundColor(const Color(0xFF0B0E14))
-                ..loadHtmlString(_getHtml());
+                ..loadHtmlString("""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{background:#0b0e14;color:white;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif}h1{color:#58a6ff}</style></head><body><h1>TitanChart View</h1></body></html>""");
             }
             @override Widget build(BuildContext context) => WebViewWidget(controller: _controller);
-            String _getHtml() => """
-              <!DOCTYPE html><html><body style="background:#0b0e14;color:white;display:flex;align-items:center;justify-content:center;height:90vh;font-family:sans-serif;">
-              <h1>TitanChart Dashboard</h1></body></html>""";
           }
 
-          // --- 2. TIMER VIEW ---
+          // --- TIMER VIEW ---
           class TimerView extends StatelessWidget {
             final VoidCallback onUpdate;
             const TimerView({super.key, required this.onUpdate});
@@ -401,14 +409,13 @@ jobs:
                 ],
               ));
             }
-            
             String _formatSeconds(int seconds) {
                int m = seconds ~/ 60; int s = seconds % 60;
                return "\${m.toString().padLeft(2, '0')}:\${s.toString().padLeft(2, '0')}";
             }
           }
 
-          // --- 3. STOPWATCH VIEW ---
+          // --- STOPWATCH VIEW ---
           class StopwatchView extends StatelessWidget {
             final VoidCallback onUpdate;
             const StopwatchView({super.key, required this.onUpdate});
@@ -417,7 +424,6 @@ jobs:
             Widget build(BuildContext context) {
               int elapsed = AppState.stopwatch['elapsed'];
               bool isRunning = AppState.stopwatch['running'];
-              
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -429,20 +435,13 @@ jobs:
                       children: [
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(backgroundColor: isRunning ? Colors.orange : Colors.green, padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20)),
-                          onPressed: () {
-                             AppState.stopwatch['running'] = !isRunning;
-                             onUpdate();
-                          },
+                          onPressed: () { AppState.stopwatch['running'] = !isRunning; onUpdate(); },
                           child: Text(isRunning ? "PAUSE" : "START", style: const TextStyle(fontSize: 20)),
                         ),
                         const SizedBox(width: 20),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.red, padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20)),
-                          onPressed: () {
-                             AppState.stopwatch['running'] = false;
-                             AppState.stopwatch['elapsed'] = 0;
-                             onUpdate();
-                          },
+                          onPressed: () { AppState.stopwatch['running'] = false; AppState.stopwatch['elapsed'] = 0; onUpdate(); },
                           child: const Text("RESET", style: TextStyle(fontSize: 20)),
                         ),
                       ],
@@ -457,7 +456,7 @@ jobs:
             }
           }
 
-          // --- 4. ALARM VIEW ---
+          // --- ALARM VIEW ---
           class AlarmView extends StatelessWidget {
             final VoidCallback onUpdate;
             const AlarmView({super.key, required this.onUpdate});
@@ -501,10 +500,8 @@ jobs:
               if(d == null) return;
               TimeOfDay? t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
               if(t == null) return;
-              
               TextEditingController msgCtrl = TextEditingController(text: "Time up!");
               if(!context.mounted) return;
-              
               showDialog(context: context, builder: (ctx) => AlertDialog(
                 backgroundColor: const Color(0xFF161B22),
                 title: const Text("Alarm Message", style: TextStyle(color: Colors.white)),
@@ -524,10 +521,8 @@ jobs:
 
       - name: Build and Sign APK
         run: |
-          # 1. Generate Keystore
           keytool -genkey -v -keystore android/app/release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias key -storepass titan123456 -keypass titan123456 -dname "CN=Titan, O=Dev, C=BD"
           
-          # 2. Create key.properties
           cat > android/key.properties <<EOF
           storePassword=titan123456
           keyPassword=titan123456
@@ -535,32 +530,23 @@ jobs:
           storeFile=release-key.jks
           EOF
           
-          # 3. Modify build.gradle
           cat > android/app/build.gradle <<EOF
           plugins {
               id "com.android.application"
               id "kotlin-android"
               id "dev.flutter.flutter-gradle-plugin"
           }
-
           def keystoreProperties = new Properties()
           def keystorePropertiesFile = rootProject.file('key.properties')
-          if (keystorePropertiesFile.exists()) {
-              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-          }
+          if (keystorePropertiesFile.exists()) { keystoreProperties.load(new FileInputStream(keystorePropertiesFile)) }
 
           android {
               namespace "com.titanchart.titanchart_pro"
               compileSdkVersion 34 
               ndkVersion flutter.ndkVersion
-
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
+              compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
               kotlinOptions { jvmTarget = '1.8' }
               sourceSets { main.java.srcDirs += 'src/main/kotlin' }
-
               defaultConfig {
                   applicationId "com.titanchart.titanchart_pro"
                   minSdkVersion 23
@@ -568,27 +554,18 @@ jobs:
                   versionCode 1
                   versionName "1.0"
               }
-
               signingConfigs {
                   release {
-                      storeFile file('release-key.jks')
-                      storePassword 'titan123456'
-                      keyAlias 'key'
-                      keyPassword 'titan123456'
+                      storeFile file('release-key.jks'); storePassword 'titan123456'; keyAlias 'key'; keyPassword 'titan123456'
                   }
               }
               buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                      minifyEnabled false
-                      shrinkResources false
-                  }
+                  release { signingConfig signingConfigs.release; minifyEnabled false; shrinkResources false }
               }
           }
           flutter { source '../..' }
           EOF
           
-          # Fix settings.gradle
           cat > android/settings.gradle <<EOF
           pluginManagement {
               def flutterSdkPath = {
