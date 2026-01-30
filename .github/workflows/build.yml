@@ -179,7 +179,7 @@ jobs:
           storeFile=release-key.jks
           EOF
           
-          # 3. Modify build.gradle (CORRECTED ORDER: PLUGINS FIRST)
+          # 3. Modify build.gradle (Fixing plugins order and Removing dynamic version codes)
           cat > android/app/build.gradle <<EOF
           plugins {
               id "com.android.application"
@@ -215,8 +215,8 @@ jobs:
                   applicationId "com.titanchart.titanchart_pro"
                   minSdkVersion 21
                   targetSdkVersion flutter.targetSdkVersion
-                  versionCode flutter.versionCode
-                  versionName flutter.versionName
+                  versionCode 1
+                  versionName "1.0"
               }
 
               signingConfigs {
