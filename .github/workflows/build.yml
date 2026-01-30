@@ -31,6 +31,7 @@ jobs:
           flutter pub add flutter_local_notifications:^17.0.0
           flutter pub add shared_preferences:^2.2.2
           flutter pub add intl:^0.19.0
+          flutter pub add permission_handler:^11.3.0
 
       - name: Setup Android Manifest
         run: |
@@ -43,6 +44,8 @@ jobs:
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
               <uses-permission android:name="android.permission.VIBRATE" />
               <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+              <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
               <application
                   android:label="TitanChart Pro"
@@ -75,7 +78,7 @@ jobs:
           </manifest>
           EOF
 
-      - name: Setup Flutter Main Code (Fixed with SharedPreferences)
+      - name: Setup Flutter Main Code (Advanced Control)
         run: |
           cat > lib/main.dart <<EOF
           import 'dart:async';
@@ -86,6 +89,7 @@ jobs:
           import 'package:webview_flutter/webview_flutter.dart';
           import 'package:flutter_local_notifications/flutter_local_notifications.dart';
           import 'package:shared_preferences/shared_preferences.dart';
+          import 'package:permission_handler/permission_handler.dart';
 
           final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
@@ -101,6 +105,20 @@ jobs:
             const InitializationSettings initializationSettings =
                 InitializationSettings(android: initializationSettingsAndroid);
             await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+            
+            // Create High Importance Channel for Alarms
+            const AndroidNotificationChannel channel = AndroidNotificationChannel(
+              'titan_alarm_channel', 
+              'Titan Alarms',
+              description: 'This channel is used for important alarms.',
+              importance: Importance.max,
+              playSound: true,
+              enableVibration: true,
+            );
+            
+            await flutterLocalNotificationsPlugin
+                .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+                ?.createNotificationChannel(channel);
           }
 
           @pragma('vm:entry-point')
@@ -111,13 +129,15 @@ jobs:
           class MyTaskHandler extends TaskHandler {
             Timer? _sysTimer;
 
-            // FIX: Added missing overrides
             @override
             Future<void> onStart(DateTime timestamp, SendPort? sendPort) async {
               final prefs = await SharedPreferences.getInstance();
               
-              _sysTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-                // 1. Load Data
+              _sysTimer = Timer.periodic(const Duration(milliseconds: 1000), (timer) async {
+                // --- 1. PROCESS ACTION QUEUE (From UI) ---
+                // UI writes commands here, Background reads & clears. exact syncing.
+                String? actionJson = prefs.getString('action_queue');
+                
                 String? timerJson = prefs.getString('timers');
                 List<dynamic> timers = timerJson != null ? jsonDecode(timerJson) : [];
                 
@@ -126,67 +146,117 @@ jobs:
                 
                 String? alarmJson = prefs.getString('alarms');
                 List<dynamic> alarms = alarmJson != null ? jsonDecode(alarmJson) : [];
+                
+                bool stateChanged = false;
 
-                bool updateNeeded = false;
-                List<String> statusParts = [];
-
-                // 2. Logic: Timers
-                for (var t in timers) {
-                  if (t['running'] == true && t['remaining'] > 0) {
-                    t['remaining'] = t['remaining'] - 1;
-                    updateNeeded = true;
-                    if (t['remaining'] == 0) {
-                      t['running'] = false;
-                      _showNotif("Timer Done", "\${t['label']} Finished!");
-                    }
-                  }
-                  if(t['running'] == true) statusParts.add("\${t['label']}: \${t['remaining']}s");
+                if (actionJson != null) {
+                   Map<String, dynamic> action = jsonDecode(actionJson);
+                   String type = action['type'];
+                   
+                   if (type == 'ADD_TIMER') {
+                     timers.add(action['data']);
+                     stateChanged = true;
+                   } 
+                   else if (type == 'TOGGLE_TIMER') {
+                     String id = action['id'];
+                     for (var t in timers) {
+                       if (t['id'] == id) t['running'] = !t['running'];
+                     }
+                     stateChanged = true;
+                   }
+                   else if (type == 'DELETE_TIMER') {
+                     timers.removeWhere((t) => t['id'] == action['id']);
+                     stateChanged = true;
+                   }
+                   else if (type == 'TOGGLE_SW') {
+                     swRunning = !swRunning;
+                     await prefs.setBool('sw_running', swRunning);
+                     stateChanged = true;
+                   }
+                   else if (type == 'RESET_SW') {
+                     swRunning = false;
+                     swElapsed = 0;
+                     await prefs.setBool('sw_running', false);
+                     await prefs.setInt('sw_elapsed', 0);
+                     stateChanged = true;
+                   }
+                   else if (type == 'ADD_ALARM') {
+                     alarms.add(action['data']);
+                     stateChanged = true;
+                   }
+                   else if (type == 'DELETE_ALARM') {
+                     alarms.removeAt(action['index']);
+                     stateChanged = true;
+                   }
+                   else if (type == 'STOP_ALL') {
+                     for (var t in timers) t['running'] = false;
+                     swRunning = false;
+                     await prefs.setBool('sw_running', false);
+                     stateChanged = true;
+                   }
+                   
+                   // Clear queue
+                   await prefs.remove('action_queue');
                 }
 
-                // 3. Logic: Stopwatch
+                // --- 2. UPDATE LOGIC ---
+                List<String> statusParts = [];
+
+                // Timers
+                for (var t in timers) {
+                  if (t['running'] == true && t['remaining'] > 0) {
+                    t['remaining']--;
+                    stateChanged = true;
+                    if (t['remaining'] <= 0) {
+                      t['running'] = false;
+                      _showNotif("Timer Finished", "\${t['label']} is done!");
+                    }
+                  }
+                  if (t['running']) statusParts.add("\${t['label']}: \${t['remaining']}s");
+                }
+
+                // Stopwatch
                 if (swRunning) {
                   swElapsed++;
-                  updateNeeded = true;
+                  await prefs.setInt('sw_elapsed', swElapsed);
+                  stateChanged = true;
                   statusParts.add("SW: \${swElapsed}s");
                 }
 
-                // 4. Logic: Alarms
+                // Alarms
                 DateTime now = DateTime.now();
                 for (var a in alarms) {
                   if (a['enabled'] == true) {
-                     DateTime target = DateTime.parse(a['time']);
-                     if (now.isAfter(target)) {
-                       _showNotif("Alarm", a['message']);
-                       a['enabled'] = false;
-                       updateNeeded = true;
-                     }
+                    DateTime target = DateTime.parse(a['time']);
+                    // Check if time passed within last 2 seconds (to avoid missing tick)
+                    if (now.isAfter(target) && now.difference(target).inSeconds < 5) {
+                       _showNotif("ALARM: \${a['message']}", "It's time!", isAlarm: true);
+                       a['enabled'] = false; // Turn off after ringing
+                       stateChanged = true;
+                    }
                   }
                 }
 
-                // 5. Save & Update Notification
-                if (updateNeeded) {
+                // --- 3. SAVE STATE & NOTIFY ---
+                if (stateChanged) {
                   await prefs.setString('timers', jsonEncode(timers));
-                  await prefs.setInt('sw_elapsed', swElapsed);
                   await prefs.setString('alarms', jsonEncode(alarms));
-                  
-                  String displayText = statusParts.join(" | ");
-                  if (displayText.isEmpty) displayText = "Tools Ready";
-
-                  FlutterForegroundTask.updateService(
-                    notificationTitle: 'TitanChart Pro',
-                    notificationText: displayText,
-                  );
-                  
-                  // Notify UI
-                  sendPort?.send("UPDATE");
+                  sendPort?.send("UPDATE"); // Tell UI to refresh
                 }
+
+                // Always update notification text
+                String displayText = statusParts.join(" | ");
+                if (displayText.isEmpty) displayText = "Titan Tools Ready";
+                
+                FlutterForegroundTask.updateService(
+                  notificationTitle: 'TitanChart Pro',
+                  notificationText: displayText,
+                );
               });
             }
 
             @override
-            void onRepeatEvent(DateTime timestamp, SendPort? sendPort) {
-              // Required override for v6.5.0
-            }
+            void onRepeatEvent(DateTime timestamp, SendPort? sendPort) {}
 
             @override
             Future<void> onDestroy(DateTime timestamp, SendPort? sendPort) async {
@@ -197,24 +267,33 @@ jobs:
             void onNotificationPressed() {
               FlutterForegroundTask.launchApp();
             }
-
+            
             @override
             void onButtonPressed(String id) async {
-               if(id == 'stopAll') {
+              if (id == 'stopAll') {
                  final prefs = await SharedPreferences.getInstance();
-                 await prefs.setString('timers', '[]');
-                 await prefs.setBool('sw_running', false);
-               }
+                 // Direct write to queue from notification button
+                 await prefs.setString('action_queue', jsonEncode({'type': 'STOP_ALL'}));
+              }
             }
 
-            Future<void> _showNotif(String title, String body) async {
-              const AndroidNotificationDetails android = AndroidNotificationDetails(
-                  'titan_alert', 'Titan Alerts', importance: Importance.max, priority: Priority.high);
+            Future<void> _showNotif(String title, String body, {bool isAlarm = false}) async {
+              var android = AndroidNotificationDetails(
+                  isAlarm ? 'titan_alarm_channel' : 'titan_alert_channel', 
+                  isAlarm ? 'Titan Alarms' : 'Titan Alerts',
+                  importance: Importance.max, 
+                  priority: Priority.high,
+                  playSound: true,
+                  sound: isAlarm ? const RawResourceAndroidNotificationSound('alarm_sound') : null, // Uses default if not found
+                  enableVibration: true,
+                  fullScreenIntent: isAlarm
+              );
               await flutterLocalNotificationsPlugin.show(
-                  DateTime.now().millisecond, title, body, const NotificationDetails(android: android));
+                  DateTime.now().millisecond, title, body, NotificationDetails(android: android));
             }
           }
 
+          // --- UI ---
           class TitanApp extends StatefulWidget {
             const TitanApp({super.key});
             @override State<TitanApp> createState() => _TitanAppState();
@@ -222,9 +301,9 @@ jobs:
 
           class _TitanAppState extends State<TitanApp> with SingleTickerProviderStateMixin {
             late TabController _tabController;
-            Timer? _uiTimer;
+            Timer? _uiPoller;
             
-            // UI State
+            // UI State Mirrors
             List<dynamic> _timers = [];
             bool _swRunning = false;
             int _swElapsed = 0;
@@ -233,12 +312,18 @@ jobs:
             @override
             void initState() {
               super.initState();
+              _requestPermissions();
               _tabController = TabController(length: 4, vsync: this);
               _initForeground();
               _startService();
               
-              // Polling UI updater (Syncs with SharedPrefs)
-              _uiTimer = Timer.periodic(const Duration(seconds: 1), (t) => _syncState());
+              // Poll for updates from SharedPrefs (Smooth UI)
+              _uiPoller = Timer.periodic(const Duration(milliseconds: 500), (t) => _syncState());
+            }
+            
+            Future<void> _requestPermissions() async {
+              await Permission.notification.request();
+              await Permission.scheduleExactAlarm.request();
             }
 
             Future<void> _syncState() async {
@@ -246,12 +331,22 @@ jobs:
                String? tJson = prefs.getString('timers');
                String? aJson = prefs.getString('alarms');
                
-               setState(() {
-                 _timers = tJson != null ? jsonDecode(tJson) : [];
-                 _swRunning = prefs.getBool('sw_running') ?? false;
-                 _swElapsed = prefs.getInt('sw_elapsed') ?? 0;
-                 _alarms = aJson != null ? jsonDecode(aJson) : [];
-               });
+               if(mounted) {
+                 setState(() {
+                   _timers = tJson != null ? jsonDecode(tJson) : [];
+                   _swRunning = prefs.getBool('sw_running') ?? false;
+                   _swElapsed = prefs.getInt('sw_elapsed') ?? 0;
+                   _alarms = aJson != null ? jsonDecode(aJson) : [];
+                 });
+               }
+            }
+            
+            // Helper to send command to Background Task
+            Future<void> _sendCommand(Map<String, dynamic> cmd) async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('action_queue', jsonEncode(cmd));
+              // Trigger immediate sync
+              Future.delayed(const Duration(milliseconds: 100), _syncState);
             }
 
             void _initForeground() {
@@ -278,7 +373,7 @@ jobs:
               if (!await FlutterForegroundTask.isRunningService) {
                 await FlutterForegroundTask.startService(
                   notificationTitle: 'TitanChart Pro',
-                  notificationText: 'Initializing...',
+                  notificationText: 'Tools Ready',
                   callback: startCallback,
                 );
               }
@@ -288,12 +383,14 @@ jobs:
             Widget build(BuildContext context) {
               return MaterialApp(
                 debugShowCheckedModeBanner: false,
-                theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: const Color(0xFF0B0E14)),
+                theme: ThemeData.dark().copyWith(
+                  scaffoldBackgroundColor: const Color(0xFF0B0E14),
+                  appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF161B22)),
+                ),
                 home: WithForegroundTask(
                   child: Scaffold(
                     appBar: AppBar(
                       title: const Text("TitanChart Pro"),
-                      backgroundColor: const Color(0xFF161B22),
                       bottom: TabBar(
                         controller: _tabController,
                         indicatorColor: Colors.green,
@@ -309,9 +406,9 @@ jobs:
                       controller: _tabController,
                       children: [
                         const ChartView(),
-                        TimerView(timers: _timers, onRefresh: _syncState),
-                        StopwatchView(running: _swRunning, elapsed: _swElapsed, onRefresh: _syncState),
-                        AlarmView(alarms: _alarms, onRefresh: _syncState),
+                        TimerView(timers: _timers, onCommand: _sendCommand),
+                        StopwatchView(running: _swRunning, elapsed: _swElapsed, onCommand: _sendCommand),
+                        AlarmView(alarms: _alarms, onCommand: _sendCommand),
                       ],
                     ),
                   ),
@@ -320,6 +417,7 @@ jobs:
             }
           }
 
+          // 1. Chart
           class ChartView extends StatefulWidget {
             const ChartView({super.key});
             @override State<ChartView> createState() => _CState();
@@ -328,15 +426,17 @@ jobs:
             late final WebViewController c;
             @override void initState() {
                super.initState();
-               c = WebViewController()..setJavaScriptMode(JavaScriptMode.unrestricted)..loadHtmlString('<html><body style="background:#0b0e14;color:white;display:flex;justify-content:center;align-items:center;"><h1>TitanChart Loading...</h1></body></html>');
+               c = WebViewController()..setJavaScriptMode(JavaScriptMode.unrestricted)..loadHtmlString('<html><body style="background:#0b0e14;color:white;display:flex;justify-content:center;align-items:center;"><h1>TitanChart</h1></body></html>');
             }
             @override Widget build(BuildContext context) => WebViewWidget(controller: c);
           }
 
+          // 2. Independent Timer Card
           class TimerView extends StatelessWidget {
             final List<dynamic> timers;
-            final Function onRefresh;
-            const TimerView({super.key, required this.timers, required this.onRefresh});
+            final Function(Map<String, dynamic>) onCommand;
+            const TimerView({super.key, required this.timers, required this.onCommand});
+            
             @override Widget build(BuildContext context) {
               return Scaffold(
                 floatingActionButton: FloatingActionButton(
@@ -347,91 +447,144 @@ jobs:
                   itemCount: timers.length,
                   itemBuilder: (ctx, i) {
                     var t = timers[i];
-                    return Card(color: const Color(0xFF161B22), child: ListTile(
-                      title: Text(t['label'], style: const TextStyle(color: Colors.white)),
-                      subtitle: Text("\${t['remaining']}s", style: const TextStyle(color: Colors.blue, fontSize: 24)),
-                      trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.red), 
-                        onPressed: () async {
-                           final prefs = await SharedPreferences.getInstance();
-                           List<dynamic> current = jsonDecode(prefs.getString('timers') ?? '[]');
-                           current.removeAt(i);
-                           await prefs.setString('timers', jsonEncode(current));
-                           onRefresh();
-                        }),
-                    ));
+                    bool isRun = t['running'];
+                    return Card(
+                      color: const Color(0xFF161B22),
+                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(t['label'], style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                                const SizedBox(height: 5),
+                                Text(_fmt(t['remaining']), style: const TextStyle(color: Colors.white, fontSize: 32, fontFamily: 'monospace')),
+                              ],
+                            ),
+                            const Spacer(),
+                            // Independent Controls
+                            IconButton(
+                              icon: Icon(isRun ? Icons.pause_circle : Icons.play_circle, color: isRun ? Colors.orange : Colors.green, size: 40),
+                              onPressed: () => onCommand({'type': 'TOGGLE_TIMER', 'id': t['id']}),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => onCommand({'type': 'DELETE_TIMER', 'id': t['id']}),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
                   },
                 ),
               );
             }
             void _add(BuildContext context) {
+               TextEditingController lbl = TextEditingController(text: "Timer");
                TextEditingController sec = TextEditingController(text: "60");
                showDialog(context: context, builder: (c) => AlertDialog(
-                 title: const Text("New Timer"),
-                 content: TextField(controller: sec, keyboardType: TextInputType.number),
-                 actions: [TextButton(onPressed: () async {
-                   final prefs = await SharedPreferences.getInstance();
-                   List<dynamic> current = jsonDecode(prefs.getString('timers') ?? '[]');
-                   current.add({
-                     'id': DateTime.now().toString(), 
-                     'label': 'Timer', 
-                     'remaining': int.tryParse(sec.text) ?? 60,
-                     'running': true
+                 backgroundColor: const Color(0xFF161B22),
+                 title: const Text("New Timer", style: TextStyle(color: Colors.white)),
+                 content: Column(mainAxisSize: MainAxisSize.min, children: [
+                   TextField(controller: lbl, decoration: const InputDecoration(labelText: "Label"), style: const TextStyle(color: Colors.white)),
+                   TextField(controller: sec, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: "Seconds"), style: const TextStyle(color: Colors.white)),
+                 ]),
+                 actions: [TextButton(onPressed: () {
+                   onCommand({
+                     'type': 'ADD_TIMER',
+                     'data': {
+                       'id': DateTime.now().toString(), 
+                       'label': lbl.text, 
+                       'remaining': int.tryParse(sec.text) ?? 60,
+                       'running': true
+                     }
                    });
-                   await prefs.setString('timers', jsonEncode(current));
-                   onRefresh();
                    Navigator.pop(c);
                  }, child: const Text("START"))],
                ));
             }
-          }
-
-          class StopwatchView extends StatelessWidget {
-            final bool running;
-            final int elapsed;
-            final Function onRefresh;
-            const StopwatchView({super.key, required this.running, required this.elapsed, required this.onRefresh});
-            @override Widget build(BuildContext context) {
-              return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                 Text("\$elapsed s", style: const TextStyle(fontSize: 80, color: Colors.blue)),
-                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                   ElevatedButton(onPressed: () async {
-                     final prefs = await SharedPreferences.getInstance();
-                     await prefs.setBool('sw_running', !running);
-                     onRefresh();
-                   }, child: Text(running ? "PAUSE" : "START")),
-                   const SizedBox(width: 20),
-                   ElevatedButton(onPressed: () async {
-                     final prefs = await SharedPreferences.getInstance();
-                     await prefs.setBool('sw_running', false);
-                     await prefs.setInt('sw_elapsed', 0);
-                     onRefresh();
-                   }, child: const Text("RESET"))
-                 ])
-              ]));
+            String _fmt(int s) {
+              int m = s ~/ 60; int sc = s % 60;
+              return "\${m.toString().padLeft(2,'0')}:\${sc.toString().padLeft(2,'0')}";
             }
           }
 
+          // 3. Stopwatch
+          class StopwatchView extends StatelessWidget {
+            final bool running;
+            final int elapsed;
+            final Function(Map<String, dynamic>) onCommand;
+            const StopwatchView({super.key, required this.running, required this.elapsed, required this.onCommand});
+            
+            @override Widget build(BuildContext context) {
+              return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                 Text(_fmt(elapsed), style: const TextStyle(fontSize: 70, color: Colors.blue, fontFamily: 'monospace')),
+                 const SizedBox(height: 30),
+                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                   ElevatedButton.icon(
+                     icon: Icon(running ? Icons.pause : Icons.play_arrow),
+                     label: Text(running ? "PAUSE" : "START"),
+                     style: ElevatedButton.styleFrom(backgroundColor: running ? Colors.orange : Colors.green, padding: const EdgeInsets.all(20)),
+                     onPressed: () => onCommand({'type': 'TOGGLE_SW'}),
+                   ),
+                   const SizedBox(width: 20),
+                   ElevatedButton.icon(
+                     icon: const Icon(Icons.refresh),
+                     label: const Text("RESET"),
+                     style: ElevatedButton.styleFrom(backgroundColor: Colors.red, padding: const EdgeInsets.all(20)),
+                     onPressed: () => onCommand({'type': 'RESET_SW'}),
+                   )
+                 ])
+              ]));
+            }
+            String _fmt(int s) {
+              int h = s ~/ 3600; int m = (s % 3600) ~/ 60; int sc = s % 60;
+              return "\${h.toString().padLeft(2,'0')}:\${m.toString().padLeft(2,'0')}:\${sc.toString().padLeft(2,'0')}";
+            }
+          }
+
+          // 4. Alarm
           class AlarmView extends StatelessWidget {
              final List<dynamic> alarms;
-             final Function onRefresh;
-             const AlarmView({super.key, required this.alarms, required this.onRefresh});
+             final Function(Map<String, dynamic>) onCommand;
+             const AlarmView({super.key, required this.alarms, required this.onCommand});
+             
              @override Widget build(BuildContext context) {
                return Scaffold(
                  floatingActionButton: FloatingActionButton(backgroundColor: Colors.green, child: const Icon(Icons.add), onPressed: () => _add(context)),
-                 body: ListView.builder(itemCount: alarms.length, itemBuilder: (c,i) => Card(color: const Color(0xFF161B22), 
-                   child: ListTile(title: Text(alarms[i]['time'].toString().substring(11,16), style: const TextStyle(color: Colors.white)), subtitle: Text(alarms[i]['message'])))),
+                 body: ListView.builder(itemCount: alarms.length, itemBuilder: (c,i) {
+                   var a = alarms[i];
+                   return Card(color: const Color(0xFF161B22), margin: const EdgeInsets.all(10), child: ListTile(
+                     leading: Icon(Icons.alarm, color: a['enabled'] ? Colors.green : Colors.grey),
+                     title: Text(a['time'].toString().substring(11,16), style: const TextStyle(color: Colors.white, fontSize: 24)),
+                     subtitle: Text(a['message'], style: const TextStyle(color: Colors.grey)),
+                     trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => onCommand({'type': 'DELETE_ALARM', 'index': i})),
+                   ));
+                 }),
                );
              }
              void _add(BuildContext context) async {
                TimeOfDay? t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
                if(t!=null) {
                  final now = DateTime.now();
-                 final dt = DateTime(now.year, now.month, now.day, t.hour, t.minute);
-                 final prefs = await SharedPreferences.getInstance();
-                 List<dynamic> current = jsonDecode(prefs.getString('alarms') ?? '[]');
-                 current.add({'time': dt.toString(), 'message': 'Alarm!', 'enabled': true});
-                 await prefs.setString('alarms', jsonEncode(current));
-                 onRefresh();
+                 DateTime dt = DateTime(now.year, now.month, now.day, t.hour, t.minute);
+                 if(dt.isBefore(now)) dt = dt.add(const Duration(days: 1)); // Next day if time passed
+                 
+                 TextEditingController msg = TextEditingController(text: "Alarm!");
+                 showDialog(context: context, builder: (c) => AlertDialog(
+                   backgroundColor: const Color(0xFF161B22),
+                   title: const Text("Set Alarm", style: TextStyle(color: Colors.white)),
+                   content: TextField(controller: msg, style: const TextStyle(color: Colors.white)),
+                   actions: [TextButton(onPressed: () {
+                     onCommand({
+                       'type': 'ADD_ALARM',
+                       'data': {'time': dt.toString(), 'message': msg.text, 'enabled': true}
+                     });
+                     Navigator.pop(c);
+                   }, child: const Text("SET"))],
+                 ));
                }
              }
           }
