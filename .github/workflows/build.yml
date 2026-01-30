@@ -26,9 +26,12 @@ jobs:
         run: |
           rm -rf ./* .target
           flutter create --org com.titanchart --project-name titanchart_pro .
+          # Adding dependencies for Time, Notifications, and Local Storage
           flutter pub add webview_flutter:^4.7.0
-          # We are allowing the latest v6.x version but fixing the code to match it
-          flutter pub add flutter_foreground_task:^6.2.0
+          flutter pub add flutter_foreground_task:^6.5.0
+          flutter pub add flutter_local_notifications:^17.0.0
+          flutter pub add intl:^0.19.0
+          flutter pub add shared_preferences:^2.2.2
 
       - name: Setup Android Manifest
         run: |
@@ -38,8 +41,9 @@ jobs:
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
               <uses-permission android:name="android.permission.WAKE_LOCK" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <!-- Required for Android 14+ -->
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+              <uses-permission android:name="android.permission.VIBRATE" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
               <application
                   android:label="TitanChart Pro"
@@ -72,16 +76,41 @@ jobs:
           </manifest>
           EOF
 
-      - name: Setup Flutter Main Code (Fixed for v6.5.0)
+      - name: Setup Flutter Main Code (Advanced Logic)
         run: |
           cat > lib/main.dart <<EOF
           import 'dart:async';
           import 'dart:isolate';
+          import 'dart:ui';
           import 'package:flutter/material.dart';
           import 'package:flutter_foreground_task/flutter_foreground_task.dart';
           import 'package:webview_flutter/webview_flutter.dart';
+          import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+          import 'package:intl/intl.dart';
 
-          void main() => runApp(const TitanApp());
+          // --- GLOBAL STATE SIMULATION (For Single File Arch) ---
+          // In a real app, use a database. Here we use static memory for the service.
+          class AppState {
+            static List<Map<String, dynamic>> timers = []; // {id, label, remaining, isRunning}
+            static Map<String, dynamic> stopwatch = {'running': false, 'elapsed': 0};
+            static List<Map<String, dynamic>> alarms = []; // {time, message, enabled}
+          }
+
+          final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+          void main() async {
+            WidgetsFlutterBinding.ensureInitialized();
+            await _initNotifications();
+            runApp(const TitanApp());
+          }
+
+          Future<void> _initNotifications() async {
+            const AndroidInitializationSettings initializationSettingsAndroid =
+                AndroidInitializationSettings('@mipmap/ic_launcher');
+            const InitializationSettings initializationSettings =
+                InitializationSettings(android: initializationSettingsAndroid);
+            await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+          }
 
           @pragma('vm:entry-point')
           void startCallback() {
@@ -89,26 +118,105 @@ jobs:
           }
 
           class MyTaskHandler extends TaskHandler {
-            // FIX: Added proper overrides for v6.5.0+
+            Timer? _timer;
             
-            @override
-            Future<void> onStart(DateTime timestamp, SendPort? sendPort) async {
-              // Task started
+            // To communicate back to UI
+            void _sendUpdate(SendPort? sendPort) {
+               sendPort?.send('UPDATE'); // Simple signal to refresh UI
             }
 
-            // This was the missing method causing the error
+            @override
+            Future<void> onStart(DateTime timestamp, SendPort? sendPort) async {
+              _timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+                bool updateNotification = false;
+                String notifText = "";
+
+                // 1. Handle Timers
+                List<String> activeTimers = [];
+                for (var t in AppState.timers) {
+                  if (t['isRunning'] == true && t['remaining'] > 0) {
+                    t['remaining']--;
+                    updateNotification = true;
+                    activeTimers.add("\${t['label']}: \${_formatTime(t['remaining'])}");
+                    
+                    if (t['remaining'] == 0) {
+                      t['isRunning'] = false;
+                      _showAlarmNotification("Timer Done!", "Timer \${t['label']} has finished.");
+                    }
+                  }
+                }
+
+                // 2. Handle Stopwatch
+                if (AppState.stopwatch['running']) {
+                  AppState.stopwatch['elapsed']++;
+                  updateNotification = true;
+                  notifText += " | SW: \${_formatTime(AppState.stopwatch['elapsed'])}";
+                }
+
+                // 3. Handle Alarms
+                DateTime now = DateTime.now();
+                for (var alarm in AppState.alarms) {
+                  if (alarm['enabled']) {
+                    DateTime scheduled = DateTime.parse(alarm['time']);
+                    if (now.year == scheduled.year && now.month == scheduled.month && 
+                        now.day == scheduled.day && now.hour == scheduled.hour && 
+                        now.minute == scheduled.minute && now.second == 0) {
+                        _showAlarmNotification("Alarm!", alarm['message']);
+                        alarm['enabled'] = false; // Trigger once
+                    }
+                  }
+                }
+
+                // 4. Update Notification Bar
+                if (updateNotification) {
+                  String status = activeTimers.join(" | ");
+                  if (status.isEmpty && AppState.stopwatch['running']) status = "Stopwatch Running";
+                  if (status.isNotEmpty) {
+                     FlutterForegroundTask.updateService(
+                      notificationTitle: 'TitanChart Pro Tools',
+                      notificationText: status + notifText,
+                    );
+                    _sendUpdate(sendPort);
+                  }
+                }
+              });
+            }
+
+            String _formatTime(int seconds) {
+              int h = seconds ~/ 3600;
+              int m = (seconds % 3600) ~/ 60;
+              int s = seconds % 60;
+              return "\${h > 0 ? '\$h:' : ''}\${m.toString().padLeft(2, '0')}:\${s.toString().padLeft(2, '0')}";
+            }
+
+            Future<void> _showAlarmNotification(String title, String body) async {
+              const AndroidNotificationDetails androidPlatformChannelSpecifics =
+                  AndroidNotificationDetails('titan_alarm', 'Titan Alarms',
+                      importance: Importance.max, priority: Priority.high, playSound: true);
+              const NotificationDetails platformChannelSpecifics =
+                  NotificationDetails(android: androidPlatformChannelSpecifics);
+              await flutterLocalNotificationsPlugin.show(
+                  DateTime.now().millisecond, title, body, platformChannelSpecifics);
+            }
+
             @override
             void onRepeatEvent(DateTime timestamp, SendPort? sendPort) {
-              // Periodic event
+              // Not used, handled in Timer.periodic
             }
 
             @override
             Future<void> onDestroy(DateTime timestamp, SendPort? sendPort) async {
-              // Task destroyed
+              _timer?.cancel();
             }
-            
+
             @override
-            void onButtonPressed(String id) {}
+            void onButtonPressed(String id) {
+              if (id == 'stop_all') {
+                for (var t in AppState.timers) t['isRunning'] = false;
+                AppState.stopwatch['running'] = false;
+                FlutterForegroundTask.updateService(notificationTitle: 'TitanChart Pro', notificationText: 'All Stopped');
+              }
+            }
             
             @override
             void onNotificationPressed() {
@@ -121,59 +229,50 @@ jobs:
             @override State<TitanApp> createState() => _TitanAppState();
           }
 
-          class _TitanAppState extends State<TitanApp> {
-            late final WebViewController _controller;
+          class _TitanAppState extends State<TitanApp> with SingleTickerProviderStateMixin {
+            late TabController _tabController;
+            ReceivePort? _receivePort;
 
             @override
             void initState() {
               super.initState();
+              _tabController = TabController(length: 4, vsync: this); // Chart, Timer, SW, Alarm
               _initForeground();
-              _controller = WebViewController()
-                ..setJavaScriptMode(JavaScriptMode.unrestricted)
-                ..setBackgroundColor(const Color(0xFF0B0E14))
-                ..addJavaScriptChannel('FlutterTimer', onMessageReceived: (msg) => _handleTimer(msg.message))
-                ..loadHtmlString(_getHtml());
+              
+              // Listen for updates from service
+               _receivePort = FlutterForegroundTask.receivePort;
+               _receivePort?.listen((message) {
+                 if (message == 'UPDATE') setState(() {});
+               });
             }
-            
+
             void _initForeground() {
               FlutterForegroundTask.init(
                 androidNotificationOptions: AndroidNotificationOptions(
-                  channelId: 'titan_timer',
-                  channelName: 'Titan Timer Service',
+                  channelId: 'titan_tools',
+                  channelName: 'Titan Tools',
                   channelImportance: NotificationChannelImportance.LOW,
                   priority: NotificationPriority.LOW,
-                  iconData: const NotificationIconData(
-                    resType: ResourceType.mipmap,
-                    resPrefix: ResourcePrefix.ic,
-                    name: 'launcher',
-                  ),
+                  iconData: const NotificationIconData(resType: ResourceType.mipmap, resPrefix: ResourcePrefix.ic, name: 'launcher'),
+                  buttons: [
+                    const NotificationButton(id: 'stop_all', text: 'STOP ALL'),
+                  ],
                 ),
                 iosNotificationOptions: const IOSNotificationOptions(),
                 foregroundTaskOptions: const ForegroundTaskOptions(
-                  interval: 5000,
+                  interval: 1000,
                   isOnceEvent: false,
                   autoRunOnBoot: true,
                   allowWakeLock: true,
-                  allowWifiLock: true,
                 ),
               );
             }
-
-            Future<void> _handleTimer(String text) async {
-              if (text == "STOP") {
-                await FlutterForegroundTask.stopService();
-                return;
-              }
-              
-              if (await FlutterForegroundTask.isRunningService) {
-                FlutterForegroundTask.updateService(
+            
+            void _startService() async {
+              if (!await FlutterForegroundTask.isRunningService) {
+                FlutterForegroundTask.startService(
                   notificationTitle: 'TitanChart Pro',
-                  notificationText: text,
-                );
-              } else {
-                await FlutterForegroundTask.startService(
-                  notificationTitle: 'TitanChart Pro',
-                  notificationText: text,
+                  notificationText: 'Tools Ready',
                   callback: startCallback,
                 );
               }
@@ -181,62 +280,245 @@ jobs:
 
             @override
             Widget build(BuildContext context) {
-              return WithForegroundTask(
-                child: MaterialApp(
-                  debugShowCheckedModeBanner: false,
-                  home: Scaffold(
-                    backgroundColor: const Color(0xFF0B0E14), 
-                    body: SafeArea(child: WebViewWidget(controller: _controller))
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                theme: ThemeData.dark().copyWith(
+                  scaffoldBackgroundColor: const Color(0xFF0B0E14),
+                  appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF161B22)),
+                ),
+                home: WithForegroundTask(
+                  child: Scaffold(
+                    appBar: AppBar(
+                      title: const Text("TitanChart Pro"),
+                      bottom: TabBar(
+                        controller: _tabController,
+                        indicatorColor: const Color(0xFF238636),
+                        tabs: const [
+                          Tab(icon: Icon(Icons.show_chart), text: "Chart"),
+                          Tab(icon: Icon(Icons.timer), text: "Timers"),
+                          Tab(icon: Icon(Icons.watch_later), text: "Stopwatch"),
+                          Tab(icon: Icon(Icons.alarm), text: "Alarms"),
+                        ],
+                      ),
+                    ),
+                    body: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        const ChartView(),
+                        TimerView(onUpdate: () { _startService(); setState((){}); }),
+                        StopwatchView(onUpdate: () { _startService(); setState((){}); }),
+                        AlarmView(onUpdate: () { _startService(); setState((){}); }),
+                      ],
+                    ),
                   ),
                 ),
               );
             }
+          }
 
+          // --- 1. CHART VIEW (WebView) ---
+          class ChartView extends StatefulWidget {
+            const ChartView({super.key});
+            @override State<ChartView> createState() => _ChartViewState();
+          }
+          class _ChartViewState extends State<ChartView> {
+            late final WebViewController _controller;
+            @override
+            void initState() {
+              super.initState();
+              _controller = WebViewController()
+                ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                ..setBackgroundColor(const Color(0xFF0B0E14))
+                ..loadHtmlString(_getHtml());
+            }
+            @override Widget build(BuildContext context) => WebViewWidget(controller: _controller);
             String _getHtml() => """
-              <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>
-                body { background: #0b0e14; color: white; font-family: sans-serif; text-align: center; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 90vh; }
-                .card { background: #161b22; padding: 30px; border-radius: 20px; border: 1px solid #30363d; width: 100%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-                input { width: 80%; padding: 15px; background: #0d1117; color: #7ee787; border: 1px solid #444; border-radius: 10px; font-size: 30px; text-align: center; margin-bottom: 20px; }
-                button { width: 100%; padding: 18px; margin-top: 10px; border-radius: 12px; border: none; font-weight: bold; font-size: 18px; cursor: pointer; transition: 0.2s; }
-                button:active { transform: scale(0.98); }
-                .start { background: #238636; color: white; }
-                .stop { background: #da3633; color: white; }
-                #display { font-size: 80px; margin: 20px 0; font-family: monospace; color: #58a6ff; font-weight: bold; }
-                h2 { color: #c9d1d9; margin-bottom: 30px; }
-              </style></head><body>
-              <div class="card">
-                <h2>TitanChart Pro</h2>
-                <input type="number" id="tInput" value="60">
-                <div id="display">00</div>
-                <button class="start" onclick="s()">START TIMER</button>
-                <button class="stop" onclick="p()">STOP</button>
-              </div>
-              <script>
-                let t, s_rem;
-                function s() {
-                  s_rem = parseInt(document.getElementById('tInput').value);
-                  if(t) clearInterval(t);
-                  
-                  // Send initial state
-                  FlutterTimer.postMessage("Running: " + s_rem + "s");
-                  
-                  t = setInterval(() => {
-                    s_rem--;
-                    document.getElementById('display').innerText = s_rem < 10 ? "0" + s_rem : s_rem;
-                    FlutterTimer.postMessage("Remaining: " + s_rem + "s");
-                    if(s_rem <= 0) { 
-                      clearInterval(t); 
-                      FlutterTimer.postMessage("Time Up!"); 
-                      document.getElementById('display').innerText = "00";
-                    }
-                  }, 1000);
-                }
-                function p() { 
-                  clearInterval(t); 
-                  document.getElementById('display').innerText = "00"; 
-                  FlutterTimer.postMessage("STOP"); 
-                }
-              </script></body></html>""";
+              <!DOCTYPE html><html><body style="background:#0b0e14;color:white;display:flex;align-items:center;justify-content:center;height:90vh;font-family:sans-serif;">
+              <h1>TitanChart Dashboard</h1></body></html>""";
+          }
+
+          // --- 2. TIMER VIEW ---
+          class TimerView extends StatelessWidget {
+            final VoidCallback onUpdate;
+            const TimerView({super.key, required this.onUpdate});
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                floatingActionButton: FloatingActionButton(
+                  backgroundColor: const Color(0xFF238636),
+                  child: const Icon(Icons.add),
+                  onPressed: () => _addTimer(context),
+                ),
+                body: ListView.builder(
+                  itemCount: AppState.timers.length,
+                  itemBuilder: (ctx, i) {
+                    final t = AppState.timers[i];
+                    return Card(
+                      color: const Color(0xFF161B22),
+                      margin: const EdgeInsets.all(10),
+                      child: ListTile(
+                        leading: Icon(Icons.timer, color: t['isRunning'] ? Colors.green : Colors.grey),
+                        title: Text(t['label'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        subtitle: Text(_formatSeconds(t['remaining']), style: const TextStyle(color: Color(0xFF58A6FF), fontSize: 24, fontFamily: 'monospace')),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(t['isRunning'] ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                              onPressed: () { t['isRunning'] = !t['isRunning']; onUpdate(); },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () { AppState.timers.removeAt(i); onUpdate(); },
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            }
+
+            void _addTimer(BuildContext context) {
+              TextEditingController secCtrl = TextEditingController(text: "60");
+              TextEditingController lblCtrl = TextEditingController(text: "Timer \${AppState.timers.length + 1}");
+              showDialog(context: context, builder: (ctx) => AlertDialog(
+                backgroundColor: const Color(0xFF161B22),
+                title: const Text("Add Timer", style: TextStyle(color: Colors.white)),
+                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                  TextField(controller: lblCtrl, decoration: const InputDecoration(labelText: "Label"), style: const TextStyle(color: Colors.white)),
+                  TextField(controller: secCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: "Seconds"), style: const TextStyle(color: Colors.white)),
+                ]),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+                  TextButton(onPressed: () {
+                    AppState.timers.add({'id': DateTime.now().toString(), 'label': lblCtrl.text, 'remaining': int.parse(secCtrl.text), 'isRunning': false});
+                    onUpdate();
+                    Navigator.pop(ctx);
+                  }, child: const Text("Add", style: TextStyle(color: Colors.green))),
+                ],
+              ));
+            }
+            
+            String _formatSeconds(int seconds) {
+               int m = seconds ~/ 60; int s = seconds % 60;
+               return "\${m.toString().padLeft(2, '0')}:\${s.toString().padLeft(2, '0')}";
+            }
+          }
+
+          // --- 3. STOPWATCH VIEW ---
+          class StopwatchView extends StatelessWidget {
+            final VoidCallback onUpdate;
+            const StopwatchView({super.key, required this.onUpdate});
+
+            @override
+            Widget build(BuildContext context) {
+              int elapsed = AppState.stopwatch['elapsed'];
+              bool isRunning = AppState.stopwatch['running'];
+              
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(_formatSeconds(elapsed), style: const TextStyle(fontSize: 80, fontFamily: 'monospace', color: Color(0xFF58A6FF))),
+                    const SizedBox(height: 30),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: isRunning ? Colors.orange : Colors.green, padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20)),
+                          onPressed: () {
+                             AppState.stopwatch['running'] = !isRunning;
+                             onUpdate();
+                          },
+                          child: Text(isRunning ? "PAUSE" : "START", style: const TextStyle(fontSize: 20)),
+                        ),
+                        const SizedBox(width: 20),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red, padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20)),
+                          onPressed: () {
+                             AppState.stopwatch['running'] = false;
+                             AppState.stopwatch['elapsed'] = 0;
+                             onUpdate();
+                          },
+                          child: const Text("RESET", style: TextStyle(fontSize: 20)),
+                        ),
+                      ],
+                    )
+                  ],
+                ),
+              );
+            }
+            String _formatSeconds(int seconds) {
+               int h = seconds ~/ 3600; int m = (seconds % 3600) ~/ 60; int s = seconds % 60;
+               return "\${h.toString().padLeft(2, '0')}:\${m.toString().padLeft(2, '0')}:\${s.toString().padLeft(2, '0')}";
+            }
+          }
+
+          // --- 4. ALARM VIEW ---
+          class AlarmView extends StatelessWidget {
+            final VoidCallback onUpdate;
+            const AlarmView({super.key, required this.onUpdate});
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                floatingActionButton: FloatingActionButton(
+                  backgroundColor: const Color(0xFF238636),
+                  child: const Icon(Icons.alarm_add),
+                  onPressed: () => _addAlarm(context),
+                ),
+                body: ListView.builder(
+                  itemCount: AppState.alarms.length,
+                  itemBuilder: (ctx, i) {
+                    final a = AppState.alarms[i];
+                    DateTime dt = DateTime.parse(a['time']);
+                    return Card(
+                      color: const Color(0xFF161B22),
+                      margin: const EdgeInsets.all(10),
+                      child: ListTile(
+                        leading: Icon(Icons.alarm, color: a['enabled'] ? Colors.blue : Colors.grey),
+                        title: Text(DateFormat('yyyy-MM-dd HH:mm').format(dt), style: const TextStyle(color: Colors.white, fontSize: 18)),
+                        subtitle: Text(a['message'], style: const TextStyle(color: Colors.grey)),
+                        trailing: Switch(
+                          value: a['enabled'],
+                          onChanged: (val) { a['enabled'] = val; onUpdate(); },
+                          activeColor: Colors.green,
+                        ),
+                        onLongPress: () { AppState.alarms.removeAt(i); onUpdate(); },
+                      ),
+                    );
+                  },
+                ),
+              );
+            }
+
+            void _addAlarm(BuildContext context) async {
+              DateTime now = DateTime.now();
+              DateTime? d = await showDatePicker(context: context, initialDate: now, firstDate: now, lastDate: DateTime(2030));
+              if(d == null) return;
+              TimeOfDay? t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+              if(t == null) return;
+              
+              TextEditingController msgCtrl = TextEditingController(text: "Time up!");
+              if(!context.mounted) return;
+              
+              showDialog(context: context, builder: (ctx) => AlertDialog(
+                backgroundColor: const Color(0xFF161B22),
+                title: const Text("Alarm Message", style: TextStyle(color: Colors.white)),
+                content: TextField(controller: msgCtrl, style: const TextStyle(color: Colors.white)),
+                actions: [
+                  TextButton(onPressed: () {
+                     DateTime finalTime = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+                     AppState.alarms.add({'time': finalTime.toIso8601String(), 'message': msgCtrl.text, 'enabled': true});
+                     onUpdate();
+                     Navigator.pop(ctx);
+                  }, child: const Text("Set Alarm", style: TextStyle(color: Colors.green))),
+                ],
+              ));
+            }
           }
           EOF
 
@@ -253,7 +535,7 @@ jobs:
           storeFile=release-key.jks
           EOF
           
-          # 3. Modify build.gradle (Updated for modern Android standards)
+          # 3. Modify build.gradle
           cat > android/app/build.gradle <<EOF
           plugins {
               id "com.android.application"
@@ -276,14 +558,8 @@ jobs:
                   sourceCompatibility JavaVersion.VERSION_1_8
                   targetCompatibility JavaVersion.VERSION_1_8
               }
-
-              kotlinOptions {
-                  jvmTarget = '1.8'
-              }
-
-              sourceSets {
-                  main.java.srcDirs += 'src/main/kotlin'
-              }
+              kotlinOptions { jvmTarget = '1.8' }
+              sourceSets { main.java.srcDirs += 'src/main/kotlin' }
 
               defaultConfig {
                   applicationId "com.titanchart.titanchart_pro"
@@ -301,7 +577,6 @@ jobs:
                       keyPassword 'titan123456'
                   }
               }
-
               buildTypes {
                   release {
                       signingConfig signingConfigs.release
@@ -310,13 +585,10 @@ jobs:
                   }
               }
           }
-
-          flutter {
-              source '../..'
-          }
+          flutter { source '../..' }
           EOF
           
-          # Fix settings.gradle to ensure plugins are loaded correctly
+          # Fix settings.gradle
           cat > android/settings.gradle <<EOF
           pluginManagement {
               def flutterSdkPath = {
@@ -326,22 +598,14 @@ jobs:
                   assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
                   return flutterSdkPath
               }()
-
               includeBuild("\$flutterSdkPath/packages/flutter_tools/gradle")
-
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
-
           plugins {
               id "dev.flutter.flutter-plugin-loader" version "1.0.0"
               id "com.android.application" version "7.3.0" apply false
               id "org.jetbrains.kotlin.android" version "1.7.10" apply false
           }
-
           include ":app"
           EOF
 
