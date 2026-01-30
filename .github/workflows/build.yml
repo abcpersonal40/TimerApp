@@ -20,14 +20,14 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0' # Updated to a slightly newer stable version for better Android 14 support
+          flutter-version: '3.19.0'
 
       - name: Create Flutter Project & Add Dependencies
         run: |
           rm -rf ./* .target
           flutter create --org com.titanchart --project-name titanchart_pro .
-          # We pin specific versions to ensure code compatibility
           flutter pub add webview_flutter:^4.7.0
+          # We are allowing the latest v6.x version but fixing the code to match it
           flutter pub add flutter_foreground_task:^6.2.0
 
       - name: Setup Android Manifest
@@ -64,7 +64,6 @@ jobs:
                       </intent-filter>
                   </activity>
                   
-                  <!-- Service configuration for v6.2.0 -->
                   <service 
                       android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
                       android:foregroundServiceType="dataSync"
@@ -73,7 +72,7 @@ jobs:
           </manifest>
           EOF
 
-      - name: Setup Flutter Main Code (Fixed for v6.2.0)
+      - name: Setup Flutter Main Code (Fixed for v6.5.0)
         run: |
           cat > lib/main.dart <<EOF
           import 'dart:async';
@@ -84,22 +83,23 @@ jobs:
 
           void main() => runApp(const TitanApp());
 
-          // Top-level function for the background task
           @pragma('vm:entry-point')
           void startCallback() {
             FlutterForegroundTask.setTaskHandler(MyTaskHandler());
           }
 
           class MyTaskHandler extends TaskHandler {
-            // Correct overrides for flutter_foreground_task v6.x
+            // FIX: Added proper overrides for v6.5.0+
+            
             @override
             Future<void> onStart(DateTime timestamp, SendPort? sendPort) async {
               // Task started
             }
 
+            // This was the missing method causing the error
             @override
-            Future<void> onEvent(DateTime timestamp, SendPort? sendPort) async {
-              // This is called periodically if interval is set, but we use manual updates mostly
+            void onRepeatEvent(DateTime timestamp, SendPort? sendPort) {
+              // Periodic event
             }
 
             @override
@@ -123,7 +123,6 @@ jobs:
 
           class _TitanAppState extends State<TitanApp> {
             late final WebViewController _controller;
-            ReceivePort? _receivePort;
 
             @override
             void initState() {
@@ -136,7 +135,6 @@ jobs:
                 ..loadHtmlString(_getHtml());
             }
             
-            // Initialization for v6.x API
             void _initForeground() {
               FlutterForegroundTask.init(
                 androidNotificationOptions: AndroidNotificationOptions(
