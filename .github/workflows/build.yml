@@ -1,4 +1,4 @@
-name: TitanChart Pro Stable Build
+name: TitanChart Pro Flutter WebView Build
 
 on:
   push:
@@ -11,258 +11,211 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js and Java
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-      
-      - uses: actions/setup-java@v3
+      - name: Setup Java
+        uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Clean and Setup Project
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.16.0'
+
+      - name: Create Flutter Project
         run: |
-          rm -rf android  # সব সময় নতুন করে অ্যান্ডরয়েড ফোল্ডার তৈরি হবে
-          mkdir -p www
+          # সব পুরনো ফাইল মুছে নতুন প্রজেক্ট তৈরি
+          rm -rf ./* .target
+          flutter create --org com.titanchart --project-name titanchart_pro .
           
-          cat > package.json <<EOF
-          {
-            "name": "com.titanchart.pro",
-            "version": "1.0.0",
-            "dependencies": {
-              "@capacitor/android": "^5.0.0",
-              "@capacitor/core": "^5.0.0"
-            },
-            "devDependencies": {
-              "@capacitor/cli": "^5.0.0"
-            }
-          }
-          EOF
+          # প্রয়োজনীয় প্যাকেজ অ্যাড করা
+          flutter pub add webview_flutter flutter_foreground_task
 
-          cat > capacitor.config.json <<EOF
-          {
-            "appId": "com.titanchart.pro",
-            "appName": "TitanChartPro",
-            "webDir": "www",
-            "bundledWebRuntime": false
-          }
-          EOF
-
-      - name: Create Web Interface (index.html)
-        run: |
-          cat > www/index.html <<EOF
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>TitanChart Pro</title>
-              <style>
-                  body { background: #0b0e14; color: white; font-family: sans-serif; text-align: center; padding: 20px; }
-                  .card { background: #161b22; padding: 30px; border-radius: 20px; border: 1px solid #30363d; margin-top: 50px; }
-                  input { width: 80%; padding: 15px; margin: 15px; border-radius: 10px; background: #0d1117; color: white; font-size: 20px; border: 1px solid #444; text-align: center; }
-                  button { width: 90%; padding: 18px; margin: 10px; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; font-size: 18px; }
-                  .btn-start { background: #238636; color: white; }
-                  .btn-stop { background: #da3633; color: white; }
-                  #display { font-size: 80px; margin: 30px; color: #7ee787; font-family: 'Courier New', monospace; }
-              </style>
-          </head>
-          <body>
-              <div class="card">
-                  <h1 style="color: #58a6ff; margin-bottom: 5px;">TitanChart Pro</h1>
-                  <p style="color: #8b949e; margin-top: 0;">Foreground Timer</p>
-                  <input type="number" id="secInput" value="60">
-                  <div id="display">00</div>
-                  <button class="btn-start" onclick="startTimer()">START TIMER</button>
-                  <button class="btn-stop" onclick="stopTimer()">STOP</button>
-              </div>
-              <script src="https://unpkg.com/@capacitor/core@5.0.0/dist/index.js"></script>
-              <script>
-                  const { TimerService } = Capacitor.Plugins;
-                  let timeLeft = 0;
-                  let timerInt = null;
-
-                  async function startTimer() {
-                      const val = parseInt(document.getElementById('secInput').value);
-                      if(isNaN(val) || val <= 0) return;
-                      timeLeft = val;
-                      await TimerService.start({ text: "Timer running: " + timeLeft + "s" });
-                      if(timerInt) clearInterval(timerInt);
-                      timerInt = setInterval(async () => {
-                          timeLeft--;
-                          document.getElementById('display').innerText = timeLeft;
-                          if(timeLeft <= 0) {
-                              clearInterval(timerInt);
-                              await TimerService.update({ text: "Time Up!" });
-                          } else {
-                              await TimerService.update({ text: "Remaining: " + timeLeft + " seconds" });
-                          }
-                      }, 1000);
-                  }
-
-                  async function stopTimer() {
-                      clearInterval(timerInt);
-                      document.getElementById('display').innerText = "00";
-                      await TimerService.stop();
-                  }
-              </script>
-          </body>
-          </html>
-          EOF
-
-      - name: Initialize Android
-        run: |
-          npm install
-          npx cap add android
-          npx cap sync
-
-      - name: Overwrite Android Files (Service & Plugin)
-        run: |
-          PKG_PATH="android/app/src/main/java/com/titanchart/pro/foreground"
-          mkdir -p $PKG_PATH
-          
-          # TimerService.java
-          cat > $PKG_PATH/TimerService.java <<EOF
-          package com.titanchart.pro.foreground;
-          import android.app.*;
-          import android.content.Intent;
-          import android.os.IBinder;
-          import android.os.Build;
-          import androidx.core.app.NotificationCompat;
-
-          public class TimerService extends Service {
-              public static final String CHANNEL_ID = "TIMER_CHANNEL";
-              public static final int NOTIF_ID = 101;
-              @Override
-              public void onCreate() {
-                  super.onCreate();
-                  if (Build.VERSION.SDK_INT >= 26) {
-                      NotificationChannel c = new NotificationChannel(CHANNEL_ID, "Timer Service", NotificationManager.IMPORTANCE_LOW);
-                      c.setSound(null, null);
-                      getSystemService(NotificationManager.class).createNotificationChannel(c);
-                  }
-                  TimerServiceHolder.service = this;
-              }
-              @Override
-              public int onStartCommand(Intent intent, int flags, int startId) {
-                  String text = intent.getStringExtra("text");
-                  startForeground(NOTIF_ID, buildNotif(text != null ? text : "Timer Active"));
-                  return START_STICKY;
-              }
-              public void update(String text) {
-                  ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).notify(NOTIF_ID, buildNotif(text));
-              }
-              private Notification buildNotif(String text) {
-                  return new NotificationCompat.Builder(this, CHANNEL_ID)
-                          .setContentTitle("TitanChart Pro")
-                          .setContentText(text)
-                          .setSmallIcon(android.R.drawable.ic_media_play)
-                          .setOngoing(true)
-                          .setOnlyAlertOnce(true)
-                          .setPriority(NotificationCompat.PRIORITY_LOW)
-                          .build();
-              }
-              @Override public IBinder onBind(Intent intent) { return null; }
-          }
-          EOF
-
-          # TimerServiceHolder.java
-          cat > $PKG_PATH/TimerServiceHolder.java <<EOF
-          package com.titanchart.pro.foreground;
-          public class TimerServiceHolder { public static TimerService service; }
-          EOF
-
-          # TimerPlugin.java
-          cat > $PKG_PATH/TimerPlugin.java <<EOF
-          package com.titanchart.pro.foreground;
-          import android.content.Intent;
-          import com.getcapacitor.*;
-          import com.getcapacitor.annotation.CapacitorPlugin;
-
-          @CapacitorPlugin(name = "TimerService")
-          public class TimerPlugin extends Plugin {
-              @PluginMethod public void start(PluginCall call) {
-                  Intent i = new Intent(getContext(), TimerService.class);
-                  i.putExtra("text", call.getString("text"));
-                  getContext().startForegroundService(i);
-                  call.resolve();
-              }
-              @PluginMethod public void update(PluginCall call) {
-                  if (TimerServiceHolder.service != null) TimerServiceHolder.service.update(call.getString("text"));
-                  call.resolve();
-              }
-              @PluginMethod public void stop(PluginCall call) {
-                  getContext().stopService(new Intent(getContext(), TimerService.class));
-                  call.resolve();
-              }
-          }
-          EOF
-
-          # MainActivity.java
-          cat > android/app/src/main/java/com/titanchart/pro/MainActivity.java <<EOF
-          package com.titanchart.pro;
-          import android.os.Bundle;
-          import com.getcapacitor.BridgeActivity;
-          import com.titanchart.pro.foreground.TimerPlugin;
-          public class MainActivity extends BridgeActivity {
-              @Override public void onCreate(Bundle savedInstanceState) {
-                  registerPlugin(TimerPlugin.class);
-                  super.onCreate(savedInstanceState);
-              }
-          }
-          EOF
-
-      - name: Fixed Android Manifest (No sed, Full Overwrite)
+      - name: Overwrite Android Manifest (Permissions & Service)
         run: |
           cat > android/app/src/main/AndroidManifest.xml <<EOF
-          <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.INTERNET"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              
               <application
-                  android:allowBackup="true"
-                  android:icon="@mipmap/ic_launcher"
-                  android:label="@string/app_name"
-                  android:roundIcon="@mipmap/ic_launcher_round"
-                  android:supportsRtl="true"
-                  android:theme="@style/AppTheme">
+                  android:label="TitanChart Pro"
+                  android:name="\${applicationName}"
+                  android:icon="@mipmap/ic_launcher">
                   <activity
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
                       android:name=".MainActivity"
-                      android:label="@string/title_activity_main"
-                      android:theme="@style/AppTheme.NoActionBarLauncher"
+                      android:exported="true"
                       android:launchMode="singleTop"
-                      android:exported="true">
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
                       <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
                   </activity>
-                  <service 
-                      android:name=".foreground.TimerService" 
-                      android:exported="false" 
-                      android:foregroundServiceType="specialUse" />
+                  <service android:name="com.pravera.flutter_foreground_task.service.ForegroundService" android:exported="false" />
               </application>
           </manifest>
           EOF
 
-      - name: Configure Gradle and Signing
+      - name: Create Main Flutter Code (lib/main.dart)
         run: |
-          # কাস্টম সাইনিং কনফিগ অ্যাড করা
-          sed -i 's/buildTypes {/signingConfigs { release { storeFile file("release.keystore"); storePassword "titan123456"; keyAlias "titan"; keyPassword "titan123456"; } } buildTypes {/' android/app/build.gradle
-          sed -i 's/release {/release { signingConfig signingConfigs.release /' android/app/build.gradle
+          cat > lib/main.dart <<EOF
+          import 'dart:async';
+          import 'package:flutter/material.dart';
+          import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+          import 'package:webview_flutter/webview_flutter.dart';
+
+          void main() => runApp(const TitanApp());
+
+          // কাস্টম নোটিফিকেশন হ্যান্ডলার
+          @pragma('vm:entry-point')
+          void startCallback() {
+            FlutterForegroundTask.setTaskHandler(MyTaskHandler());
+          }
+
+          class MyTaskHandler extends TaskHandler {
+            @override
+            void onStart(DateTime timestamp, SendPort? sendPort) async {}
+            @override
+            void onRepeatEvent(DateTime timestamp, SendPort? sendPort) async {}
+            @override
+            void onDestroy(DateTime timestamp, SendPort? sendPort) async {}
+          }
+
+          class TitanApp extends StatefulWidget {
+            const TitanApp({super.key});
+            @override
+            State<TitanApp> createState() => _TitanAppState();
+          }
+
+          class _TitanAppState extends State<TitanApp> {
+            late final WebViewController _controller;
+
+            @override
+            void initState() {
+              super.initState();
+              _initForegroundTask();
+              
+              _controller = WebViewController()
+                ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                ..addJavaScriptChannel('FlutterTimer', onMessageReceived: (message) {
+                  _updateNotification(message.message);
+                })
+                ..loadHtmlString(_getHtmlContent());
+            }
+
+            void _initForegroundTask() {
+              FlutterForegroundTask.init(
+                androidNotificationOptions: AndroidNotificationOptions(
+                  channelId: 'timer_channel',
+                  channelName: 'Timer Notification',
+                  channelDescription: 'TitanChart Timer Running',
+                  channelImportance: NotificationChannelImportance.LOW,
+                  priority: NotificationPriority.LOW,
+                  iconData: const NotificationIconData(resType: ResourceType.mipmap, resPrefix: ResourcePrefix.ic, name: 'launcher'),
+                ),
+                iosNotificationOptions: const IOSNotificationOptions(),
+                foregroundTaskOptions: const ForegroundTaskOptions(interval: 5000, isOnceEvent: false, autoRunOnBoot: true, allowWakeLock: true),
+              );
+            }
+
+            Future<void> _updateNotification(String text) async {
+              if (await FlutterForegroundTask.isRunningService) {
+                FlutterForegroundTask.updateService(notificationTitle: 'TitanChart Pro', notificationText: text);
+              } else {
+                await FlutterForegroundTask.startService(notificationTitle: 'TitanChart Pro', notificationText: text, callback: startCallback);
+              }
+              if (text == "STOP") await FlutterForegroundTask.stopService();
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                home: Scaffold(
+                  backgroundColor: const Color(0xFF0B0E14),
+                  body: SafeArea(child: WebViewWidget(controller: _controller)),
+                ),
+              );
+            }
+
+            String _getHtmlContent() {
+              return """
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <style>
+                  body { background: #0b0e14; color: white; font-family: sans-serif; text-align: center; padding: 20px; }
+                  .card { background: #161b22; padding: 30px; border-radius: 20px; border: 1px solid #30363d; margin-top: 40px; }
+                  input { width: 80%; padding: 15px; background: #0d1117; color: #7ee787; border: 1px solid #444; border-radius: 10px; font-size: 30px; text-align: center; }
+                  button { width: 90%; padding: 15px; margin-top: 15px; border-radius: 10px; border: none; font-weight: bold; font-size: 18px; cursor: pointer; }
+                  .start { background: #238636; color: white; }
+                  .stop { background: #da3633; color: white; }
+                  #display { font-size: 80px; margin: 30px; font-family: monospace; color: #58a6ff; }
+                </style>
+              </head>
+              <body>
+                <div class="card">
+                  <h2>TitanChart Pro</h2>
+                  <input type="number" id="timerInput" value="60">
+                  <div id="display">00</div>
+                  <button class="start" onclick="startTimer()">START TIMER</button>
+                  <button class="stop" onclick="stopTimer()">STOP</button>
+                </div>
+                <script>
+                  let timer;
+                  let seconds;
+                  function startTimer() {
+                    seconds = parseInt(document.getElementById('timerInput').value);
+                    if(timer) clearInterval(timer);
+                    timer = setInterval(() => {
+                      seconds--;
+                      document.getElementById('display').innerText = seconds;
+                      FlutterTimer.postMessage("Time Remaining: " + seconds + "s");
+                      if(seconds <= 0) {
+                        clearInterval(timer);
+                        FlutterTimer.postMessage("Time is up!");
+                      }
+                    }, 1000);
+                  }
+                  function stopTimer() {
+                    clearInterval(timer);
+                    document.getElementById('display').innerText = "00";
+                    FlutterTimer.postMessage("STOP");
+                  }
+                </script>
+              </body>
+              </html>
+              """;
+            }
+          }
+          EOF
+
+      - name: Build Release APK
+        run: |
+          # কি-স্টোর জেনারেট
+          keytool -genkey -v -keystore android/app/release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias key -storepass titan123456 -keypass titan123456 -dname "CN=Titan, O=Dev, C=BD"
           
-          # কি-স্টোর তৈরি
-          keytool -genkey -v -keystore android/app/release.keystore -alias "titan" -keyalg RSA -keysize 2048 -validity 10000 -storetype JKS -dname "CN=Titan, O=Dev, C=BD" -storepass "titan123456" -keypass "titan123456"
+          # কি-স্টোর কনফিগ
+          cat > android/key.properties <<EOF
+          storePassword=titan123456
+          keyPassword=titan123456
+          keyAlias=key
+          storeFile=release-key.jks
+          EOF
+          
+          # Gradle আপডেট সাইনিং এর জন্য
+          sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.release/' android/app/build.gradle
+          
+          flutter build apk --release
 
-      - name: Build Final APK
-        run: |
-          cd android && chmod +x gradlew && ./gradlew assembleRelease
-
-      - name: Upload Finished APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TitanChartPro-Timer-Fixed-APK
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: TitanChart-Flutter-WebView-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
