@@ -1,4 +1,4 @@
-name: TitanChart Pro Flutter WebView Build
+name: TitanChart Pro Flutter V2 Build
 
 on:
   push:
@@ -24,14 +24,12 @@ jobs:
 
       - name: Create Flutter Project
         run: |
-          # সব পুরনো ফাইল মুছে নতুন প্রজেক্ট তৈরি
           rm -rf ./* .target
+          # নতুন প্রজেক্ট তৈরি (V2 এম্বেডিং ডিফল্টভাবে থাকবে)
           flutter create --org com.titanchart --project-name titanchart_pro .
-          
-          # প্রয়োজনীয় প্যাকেজ অ্যাড করা
           flutter pub add webview_flutter flutter_foreground_task
 
-      - name: Overwrite Android Manifest (Permissions & Service)
+      - name: Overwrite Android Manifest (Fix V2 Embedding)
         run: |
           cat > android/app/src/main/AndroidManifest.xml <<EOF
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -39,11 +37,18 @@ jobs:
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
               <uses-permission android:name="android.permission.WAKE_LOCK" />
-              
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
               <application
                   android:label="TitanChart Pro"
                   android:name="\${applicationName}"
                   android:icon="@mipmap/ic_launcher">
+                  
+                  <!-- V2 Embedding Meta Data - এটি ছাড়া বিল্ড হবে না -->
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
@@ -57,22 +62,26 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
                   </activity>
-                  <service android:name="com.pravera.flutter_foreground_task.service.ForegroundService" android:exported="false" />
+                  
+                  <service 
+                      android:name="com.pravera.flutter_foreground_task.service.ForegroundService" 
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse" />
               </application>
           </manifest>
           EOF
 
-      - name: Create Main Flutter Code (lib/main.dart)
+      - name: Create Main Code (lib/main.dart)
         run: |
           cat > lib/main.dart <<EOF
           import 'dart:async';
+          import 'dart:isolate';
           import 'package:flutter/material.dart';
           import 'package:flutter_foreground_task/flutter_foreground_task.dart';
           import 'package:webview_flutter/webview_flutter.dart';
 
           void main() => runApp(const TitanApp());
 
-          // কাস্টম নোটিফিকেশন হ্যান্ডলার
           @pragma('vm:entry-point')
           void startCallback() {
             FlutterForegroundTask.setTaskHandler(MyTaskHandler());
@@ -99,22 +108,20 @@ jobs:
             @override
             void initState() {
               super.initState();
-              _initForegroundTask();
-              
+              _initForeground();
               _controller = WebViewController()
                 ..setJavaScriptMode(JavaScriptMode.unrestricted)
-                ..addJavaScriptChannel('FlutterTimer', onMessageReceived: (message) {
-                  _updateNotification(message.message);
+                ..addJavaScriptChannel('FlutterTimer', onMessageReceived: (msg) {
+                  _handleTimer(msg.message);
                 })
-                ..loadHtmlString(_getHtmlContent());
+                ..loadHtmlString(_getHtml());
             }
 
-            void _initForegroundTask() {
+            void _initForeground() {
               FlutterForegroundTask.init(
                 androidNotificationOptions: AndroidNotificationOptions(
-                  channelId: 'timer_channel',
-                  channelName: 'Timer Notification',
-                  channelDescription: 'TitanChart Timer Running',
+                  channelId: 'titan_timer',
+                  channelName: 'Timer Service',
                   channelImportance: NotificationChannelImportance.LOW,
                   priority: NotificationPriority.LOW,
                   iconData: const NotificationIconData(resType: ResourceType.mipmap, resPrefix: ResourcePrefix.ic, name: 'launcher'),
@@ -124,13 +131,16 @@ jobs:
               );
             }
 
-            Future<void> _updateNotification(String text) async {
+            Future<void> _handleTimer(String text) async {
+              if (text == "STOP") {
+                await FlutterForegroundTask.stopService();
+                return;
+              }
               if (await FlutterForegroundTask.isRunningService) {
                 FlutterForegroundTask.updateService(notificationTitle: 'TitanChart Pro', notificationText: text);
               } else {
                 await FlutterForegroundTask.startService(notificationTitle: 'TitanChart Pro', notificationText: text, callback: startCallback);
               }
-              if (text == "STOP") await FlutterForegroundTask.stopService();
             }
 
             @override
@@ -144,16 +154,16 @@ jobs:
               );
             }
 
-            String _getHtmlContent() {
+            String _getHtml() {
               return """
               <!DOCTYPE html>
               <html>
               <head>
                 <style>
                   body { background: #0b0e14; color: white; font-family: sans-serif; text-align: center; padding: 20px; }
-                  .card { background: #161b22; padding: 30px; border-radius: 20px; border: 1px solid #30363d; margin-top: 40px; }
+                  .card { background: #161b22; padding: 30px; border-radius: 20px; border: 1px solid #30363d; margin-top: 50px; }
                   input { width: 80%; padding: 15px; background: #0d1117; color: #7ee787; border: 1px solid #444; border-radius: 10px; font-size: 30px; text-align: center; }
-                  button { width: 90%; padding: 15px; margin-top: 15px; border-radius: 10px; border: none; font-weight: bold; font-size: 18px; cursor: pointer; }
+                  button { width: 95%; padding: 18px; margin-top: 15px; border-radius: 12px; border: none; font-weight: bold; font-size: 18px; cursor: pointer; }
                   .start { background: #238636; color: white; }
                   .stop { background: #da3633; color: white; }
                   #display { font-size: 80px; margin: 30px; font-family: monospace; color: #58a6ff; }
@@ -176,10 +186,10 @@ jobs:
                     timer = setInterval(() => {
                       seconds--;
                       document.getElementById('display').innerText = seconds;
-                      FlutterTimer.postMessage("Time Remaining: " + seconds + "s");
+                      FlutterTimer.postMessage("Remaining: " + seconds + "s");
                       if(seconds <= 0) {
                         clearInterval(timer);
-                        FlutterTimer.postMessage("Time is up!");
+                        FlutterTimer.postMessage("Timer Finished!");
                       }
                     }, 1000);
                   }
@@ -209,7 +219,7 @@ jobs:
           storeFile=release-key.jks
           EOF
           
-          # Gradle আপডেট সাইনিং এর জন্য
+          # সাইনিং কনফিগারেশন গ্রেডল-এ অ্যাড করা
           sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.release/' android/app/build.gradle
           
           flutter build apk --release
@@ -217,5 +227,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TitanChart-Flutter-WebView-APK
+          name: TitanChart-Pro-Fixed-APK
           path: build/app/outputs/flutter-apk/app-release.apk
