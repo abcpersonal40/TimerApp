@@ -1,0 +1,1655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neural Gemini 2.5 - OS Agent</title>
+    <script src="planner/marked.min.js"></script>
+    <style>
+        :root { 
+            --primary: #4f46e5; --accent: #0ea5e9; --bg: #f8fafc; 
+            --text: #1e293b; --card-bg: rgba(255, 255, 255, 0.85);
+        }
+        * { box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; }
+
+        body { 
+            margin: 0; padding: 0; overflow: hidden; 
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 100%);
+	    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif; 
+	    color: var(--text);
+        }
+
+        #neuralCanvas { position: fixed; top: 0; left: 0; z-index: -1; pointer-events: none; }
+
+        #app-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; z-index: 10; 
+        }
+
+        /* Top Controls */
+        .floating-controls {
+            position: absolute; top: 20px; right: 20px; z-index: 50;
+            display: flex; gap: 12px;
+        }
+        .control-btn {
+            width: 40px; height: 40px; border-radius: 12px;
+            background: rgba(255,255,255,0.9); backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px rgba(79, 70, 229, 0.1);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; color: #64748b; transition: all 0.3s;
+            font-size: 16px; border: 1px solid white;
+        }
+        .control-btn:hover { color: var(--primary); transform: translateY(-2px); }
+
+        .status-badge {
+            position: absolute; top: 25px; left: 25px;
+            display: flex; align-items: center; gap: 8px;
+            font-size: 13px; font-weight: 600; color: var(--primary);
+            background: rgba(255,255,255,0.8); padding: 8px 16px; border-radius: 30px;
+            backdrop-filter: blur(4px); box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+        }
+        .pulse-dot {
+            width: 8px; height: 8px; background: #22c55e; border-radius: 50%;
+            box-shadow: 0 0 0 rgba(34, 197, 94, 0.4);
+            animation: pulse-green 2s infinite;
+        }
+        @keyframes pulse-green { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
+
+        /* Chat Window */
+        #chat-window {
+            flex: 1; overflow-y: auto; padding: 90px 20px 30px 20px;
+            display: flex; flex-direction: column; gap: 20px;
+            scrollbar-width: none; scroll-behavior: smooth;
+        }
+        
+        .msg {
+            width: fit-content; max-width: 85%; 
+            padding: 15px 22px; border-radius: 20px; font-size: 15px;
+            line-height: 1.6; animation: fadeSlide 0.4s ease-out;
+            position: relative; word-wrap: break-word;
+        }
+        @keyframes fadeSlide { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }
+
+        .bot { 
+            align-self: flex-start; background: rgba(255,255,255,0.85); 
+            backdrop-filter: blur(12px); color: var(--text); 
+            border-bottom-left-radius: 4px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+        }
+        .bot p { margin: 0 0 10px 0; } .bot p:last-child { margin: 0; }
+        .bot ul { margin: 5px 0 10px 20px; padding: 0; }
+        .bot code { background: #e2e8f0; padding: 2px 5px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+
+        .user { 
+            align-self: flex-end; 
+            background: linear-gradient(135deg, var(--primary), var(--accent)); 
+            color: white; border-bottom-right-radius: 4px; 
+            box-shadow: 0 8px 25px rgba(79, 70, 229, 0.25); 
+        }
+
+        .tool-usage {
+            align-self: center; font-size: 11px; color: #64748b;
+            background: rgba(255,255,255,0.5); padding: 4px 12px;
+            border-radius: 20px; border: 1px dashed #cbd5e1;
+            margin-bottom: -10px; animation: fadeIn 0.5s;
+        }
+
+        /* Typing & Input */
+        .typing {
+            align-self: flex-start; display: none; align-items: center; gap: 5px; 
+            background: rgba(255,255,255,0.5); padding: 12px 20px; border-radius: 24px; margin-left: 20px;
+        }
+        .wave-dot { width: 5px; height: 5px; background: var(--primary); border-radius: 50%; animation: wave 1.3s linear infinite; }
+        .wave-dot:nth-child(2) { animation-delay: -1.1s; }
+        .wave-dot:nth-child(3) { animation-delay: -0.9s; }
+        @keyframes wave { 0%, 60%, 100% { transform: initial; } 30% { transform: translateY(-5px); } }
+
+        .input-zone { width: 100%; padding: 25px; display: flex; justify-content: center; z-index: 50; }
+        .input-wrapper {
+            width: 100%; max-width: 700px; background: rgba(255,255,255,0.95); border-radius: 20px;
+            display: flex; align-items: center; padding: 6px 6px 6px 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.05); border: 1px solid white;
+            transition: 0.3s;
+        }
+        .input-wrapper:focus-within { transform: scale(1.02); box-shadow: 0 15px 50px rgba(79, 70, 229, 0.1); }
+        input { flex: 1; border: none; background: transparent; font-size: 16px; color: var(--text); padding-right: 15px; }
+        
+        .send-btn {
+            width: 45px; height: 45px; border-radius: 14px; border: none;
+            background: var(--primary); color: white; cursor: pointer; 
+            display: flex; align-items: center; justify-content: center; transition: 0.3s;
+            font-size: 16px;
+        }
+        .send-btn:hover { background: var(--accent); transform: rotate(-10deg); }
+
+        /* Settings Modal */
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.2); backdrop-filter: blur(5px); display: none; z-index: 900; }
+        .settings-card {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -40%);
+            width: 90%; max-width: 380px; background: #fff; z-index: 1001; 
+            padding: 25px; border-radius: 28px; box-shadow: 0 20px 60px rgba(79, 70, 229, 0.2);
+            display: none; opacity: 0; transition: all 0.4s; text-align: left;
+        }
+        .settings-card.active { display: block; opacity: 1; transform: translate(-50%, -50%); }
+        
+        label { font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 5px; display: block; }
+        
+        .settings-card input, .settings-card select { 
+            width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 15px; 
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .api-row { display: flex; gap: 10px; align-items: flex-start; }
+        .small-btn { 
+            padding: 12px; background: #f1f5f9; color: var(--text); border: none; 
+            border-radius: 10px; cursor: pointer; white-space: nowrap; font-size: 13px; font-weight: 600;
+        }
+        .small-btn:hover { background: #e2e8f0; }
+        .connect-btn { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; }
+
+        /* Sidebar for History */
+        #sidebar {
+            position: fixed; left: -85vw; top: 0; width: 85vw; max-width: 350px; height: 100%;
+            background: rgba(255,255,255,0.98); z-index: 1000; transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex; flex-direction: column; padding: 30px; box-shadow: 10px 0 40px rgba(0,0,0,0.05);
+        }
+        #sidebar.open { left: 0; }
+        .h-item { 
+            padding: 12px; background: #f1f5f9; border-radius: 10px; margin-bottom: 8px; 
+            font-size: 13px; cursor: pointer; color: #475569; display: flex; 
+            justify-content: space-between; align-items: center; transition: 0.2s;
+        }
+        .h-item:hover { background: #e2e8f0; }
+
+
+
+
+
+
+/* CUSTOM PREMIUM DROPDOWN FOR AI MODEL */
+.custom-dropdown { position: relative; width: 100%; margin-bottom: 15px; }
+.dropdown-selected { 
+    padding: 12px 15px; border: 1px solid #e2e8f0; border-radius: 10px; 
+    background: #fff; font-size: 0.95rem; font-weight: 600; color: var(--text); 
+    display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+}
+.dropdown-selected.active { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+.dropdown-options { 
+    position: absolute; top: 100%; left: 0; width: 100%; max-height: 150px; overflow-y: auto; 
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; 
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 100; 
+    opacity: 0; visibility: hidden; transform: translateY(-10px); transition: all 0.2s;
+}
+.dropdown-options.show { opacity: 1; visibility: visible; transform: translateY(5px); }
+.dropdown-item { padding: 12px 15px; font-size: 0.85rem; cursor: pointer; border-bottom: 1px solid #f8fafc; }
+.dropdown-item:hover { background: #eff6ff; color: var(--primary); font-weight: bold;}
+
+
+
+
+
+
+/* SVG Perfect Centering Fix */
+.control-btn, .send-btn {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+}
+.control-btn svg, .send-btn svg {
+    display: block;
+    margin: 0;
+}
+
+
+
+    </style>
+</head>
+<body>
+
+    <canvas id="neuralCanvas"></canvas>
+
+    <div id="app-container">
+
+	    <div class="status-badge">
+            <div class="pulse-dot"></div> <span id="current-model-badge">Neural OS Agent</span>
+        </div>
+
+
+<!-- TOP CONTROLS -->
+        <div class="floating-controls">
+            <!-- Settings -->
+            <div class="control-btn" id="open-settings" title="API Key">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+            </div>
+            <!-- New Chat -->
+            <div class="control-btn" id="new-chat" title="New Synapse">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </div>
+            <!-- History -->
+            <div class="control-btn" id="open-hist" title="Memory">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline><polyline points="12 7 12 12 15 15"></polyline></svg>
+            </div>
+        </div>
+
+
+
+        <div id="chat-window"></div>
+
+        <div class="typing" id="typing-ui">
+            <div class="wave-dot"></div><div class="wave-dot"></div><div class="wave-dot"></div>
+        </div>
+
+        <div class="input-zone">
+            <div class="input-wrapper">
+                <input type="text" id="user-in" placeholder="Ask to create habits, check plans..." autocomplete="off">
+
+<button class="send-btn" id="send-btn">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+</button>
+
+
+
+
+            </div>
+        </div>
+    </div>
+
+    <div class="overlay" id="overlay"></div>
+
+    <div id="sidebar">
+        <h3 style="color: var(--text); font-weight: 600; margin-top: 0;">Neural Memory (DB)</h3>
+        <div id="h-list" style="overflow-y:auto; flex:1; margin-top:10px;"></div>
+        <button id="clear-db" style="margin-top:20px; padding:12px; border:none; background:#fee2e2; color:#dc2626; border-radius:10px; cursor:pointer; font-weight:500;">Reset All Memory</button>
+    </div>
+
+    <div class="settings-card" id="settings-card">
+        <h3 style="margin-top:0; margin-bottom: 20px;">System Settings</h3>
+        
+        <label>Google AI Studio API Key</label>
+        <div class="api-row">
+            <input type="password" id="api-key-input" placeholder="Paste API Key here" style="margin-bottom: 0;">
+            <button class="small-btn" id="btn-fetch-models">Fetch Models</button>
+        </div>
+        <p style="font-size:10px; color:#94a3b8; margin: 5px 0 15px 0;">Get your key from Google AI Studio.</p>
+
+
+	<label>Select AI Model</label>
+	<div class="custom-dropdown">
+	    <div class="dropdown-selected" id="aiModelSelectedBtn" onclick="toggleAiDropdown()">
+	        <span id="aiModelText">Gemini 2.5 Flash</span>
+
+		<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="aiModelArrow" style="transition: 0.2s;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+
+
+	    </div>
+	    <div class="dropdown-options" id="aiModelList">
+	        <div class="dropdown-item" onclick="selectAiModel('models/gemini-2.5-flash', 'Gemini 2.5 Flash')">Gemini 2.5 Flash</div>
+	    </div>
+	</div>
+	<!-- Hidden input for logic -->
+	<input type="hidden" id="model-select" value="models/gemini-2.5-flash">
+
+
+
+        <button class="connect-btn" id="save-settings">Save & Connect</button>
+    </div>
+
+    <script>
+        /**
+         * ----------------------------------------
+         * 1. DATABASE BRIDGE (Universal Access)
+         * ----------------------------------------
+         */
+
+/**
+         * ----------------------------------------
+         * 1. DATABASE BRIDGE (Universal Access)
+         * ----------------------------------------
+         */
+        const DB_CONFIG = {
+            habit: { name: 'ProFitDB', store: 'data', key: 'main' },
+            planner: { name: 'ProPlannerDB', store: 'data', key: 'mainStore' },
+            time: { name: 'StudioUltraDB', store: 'data', key: null, type: 'array' } // NEW: Time DB added
+        };
+
+        function openTargetDB(type) {
+            const config = DB_CONFIG[type];
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(config.name); 
+                req.onsuccess = () => resolve({ db: req.result, config });
+                req.onerror = (e) => reject(e);
+            });
+        }
+
+        async function readDB(type) {
+            try {
+                const { db, config } = await openTargetDB(type);
+                return new Promise((resolve) => {
+                    if (!db.objectStoreNames.contains(config.store)) { db.close(); resolve(null); return; }
+                    const tx = db.transaction(config.store, 'readonly');
+                    
+                    // NEW: Handle Array type DBs like Time Studio
+                    const req = config.type === 'array' ? tx.objectStore(config.store).getAll() : tx.objectStore(config.store).get(config.key);
+                    
+                    req.onsuccess = () => { db.close(); resolve(req.result || null); };
+                    req.onerror = () => { db.close(); resolve(null); };
+                });
+            } catch (e) { console.error("DB Read Error:", e); return null; }
+        }
+
+
+
+
+
+
+async function writeDB(type, data) {
+            try {
+                const { db, config } = await openTargetDB(type);
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(config.store, 'readwrite');
+                    const store = tx.objectStore(config.store);
+                    
+                    // NEW: Handle Array Databases (like Time Studio) properly
+                    if (config.type === 'array' && Array.isArray(data)) {
+                        store.clear().onsuccess = () => {
+                            data.forEach(item => store.put(item));
+                        };
+                    } else {
+                        // Standard Object Databases (Habit, Planner)
+                        store.put(data, config.key);
+                    }
+
+                    tx.oncomplete = () => { 
+                        db.close(); 
+                        const channel = new BroadcastChannel('app_sync');
+                        channel.postMessage({ type: 'refresh', target: type });
+                        resolve(true); 
+                    };
+                    tx.onerror = (e) => { db.close(); reject(e); };
+                });
+            } catch (e) { console.error("DB Write Error:", e); return false; }
+        }
+
+
+
+        /**
+         * ----------------------------------------
+         * 1.5. CHAT HISTORY DB (NeuralGeminiDB)
+         * ----------------------------------------
+         */
+/**
+         * ----------------------------------------
+         * 1.5. CHAT HISTORY DB (Advanced Memory Management)
+         * ----------------------------------------
+         */
+        let chatDB;
+        // Version 2: Added index for sorting by time
+        const chatReq = indexedDB.open("NeuralGeminiDB", 2); 
+        
+        chatReq.onupgradeneeded = (e) => {
+            chatDB = e.target.result;
+            let store;
+            if(!chatDB.objectStoreNames.contains("chats")) {
+                store = chatDB.createObjectStore("chats", { keyPath: "id" });
+            } else {
+                store = e.target.transaction.objectStore("chats");
+            }
+            // Create index for time-based sorting
+            if(!store.indexNames.contains("timeIdx")) {
+                store.createIndex("timeIdx", "time", { unique: false });
+            }
+        };
+        chatReq.onsuccess = (e) => chatDB = e.target.result;
+
+        // --- COMPRESSION ENGINE ---
+        async function compressData(dataObj) {
+            const jsonStr = JSON.stringify(dataObj);
+            if (!window.CompressionStream) return jsonStr; // Fallback
+            const stream = new Blob([jsonStr], { type: 'application/json' })
+                           .stream().pipeThrough(new CompressionStream('deflate'));
+            return await new Response(stream).arrayBuffer();
+        }
+
+        async function decompressData(dataPayload) {
+            if (!dataPayload) return { uiData: [], apiData: [] };
+            if (typeof dataPayload === 'string') return JSON.parse(dataPayload); // Legacy Fallback
+            if (dataPayload.uiData) return dataPayload; // Uncompressed handling
+            
+            try {
+                const stream = new Blob([dataPayload]).stream().pipeThrough(new DecompressionStream('deflate'));
+                const jsonText = await new Response(stream).text();
+                return JSON.parse(jsonText);
+            } catch(e) {
+                console.error("Decompression failed", e);
+                return { uiData: [], apiData: [] };
+            }
+        }
+
+        // --- SAVE TO DB (WITH 35 LIMIT) ---
+        async function saveChatToDB() {
+            if (!chatDB || uiMessages.length === 0) return;
+            const titleMsg = uiMessages.find(m => m.type === 'user');
+            const title = titleMsg ? titleMsg.text.substring(0, 25) + "..." : "New OS Session";
+            
+            // Compress the heavy payload before saving
+            const payload = { uiData: uiMessages, apiData: chatHistory };
+            const compressedData = await compressData(payload);
+
+            const tx = chatDB.transaction("chats", "readwrite");
+            const store = tx.objectStore("chats");
+            
+            store.put({ 
+                id: currentChatId, 
+                title: title, 
+                time: Date.now(),
+                data: compressedData // Store compressed binary to save DB Space
+            });
+
+            // Auto Delete Oldest if > 35
+            tx.oncomplete = () => {
+                const cleanTx = chatDB.transaction("chats", "readwrite");
+                const cleanStore = cleanTx.objectStore("chats");
+                const countReq = cleanStore.count();
+                
+                countReq.onsuccess = () => {
+                    if (countReq.result > 35) {
+                        let excess = countReq.result - 35;
+                        const index = cleanStore.index("timeIdx");
+                        const cursorReq = index.openCursor(null, "next"); // Oldest first
+                        
+                        cursorReq.onsuccess = (e) => {
+                            const cursor = e.target.result;
+                            if (cursor && excess > 0) {
+                                // Never delete the currently active chat!
+                                if (cursor.value.id !== currentChatId) {
+                                    cursor.delete();
+                                    excess--;
+                                }
+                                cursor.continue();
+                            }
+                        };
+                    }
+                };
+            };
+        }
+
+        // --- FETCH METADATA ONLY (ZERO RAM LAG) ---
+        async function getChatListFromDB() {
+            return new Promise((resolve) => {
+                if (!chatDB) return resolve([]);
+                const tx = chatDB.transaction("chats", "readonly");
+                const store = tx.objectStore("chats");
+                const index = store.index("timeIdx");
+                
+                const req = index.openCursor(null, "prev"); // Newest first
+                const list = [];
+                
+                req.onsuccess = (e) => {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        // Extract ONLY ID, Title, and Time. Discard the heavy 'data' buffer
+                        list.push({ id: cursor.value.id, title: cursor.value.title, time: cursor.value.time });
+                        cursor.continue();
+                    } else {
+                        resolve(list);
+                    }
+                };
+            });
+        }
+
+        // --- DECOMPRESS & LOAD SPECIFIC CHAT ON CLICK ---
+        async function loadSpecificChat(id) {
+            return new Promise((resolve) => {
+                const tx = chatDB.transaction("chats", "readonly");
+                const store = tx.objectStore("chats");
+                const req = store.get(id);
+                
+                req.onsuccess = async (e) => {
+                    const record = e.target.result;
+                    if (record) {
+                        // Support both compressed and old uncompressed data
+                        let fullData = record.data ? await decompressData(record.data) : await decompressData(record);
+                        resolve({
+                            uiData: fullData.uiData || [],
+                            apiData: fullData.apiData || []
+                        });
+                    } else {
+                        resolve(null);
+                    }
+                };
+            });
+        }
+
+        /**
+         * ----------------------------------------
+         * 2. AGENT TOOLS (The Hands)
+         * ----------------------------------------
+         */
+
+        /**
+         * ----------------------------------------
+         * 2. AGENT TOOLS (The Hands)
+         * ----------------------------------------
+         */
+        const AgentTools = {
+            get_habit_structure: async () => {
+                const data = await readDB('habit');
+                if(!data) return "No habit data found.";
+                return JSON.stringify({
+                    groups: data.groups.map(g => g.name),
+                    habits: data.habits.map(h => ({ name: h.name, group: data.groups.find(g=>g.id===h.groupId)?.name, type: h.type }))
+                });
+            },
+            create_habit: async ({ name, groupName, type = 'check', target = 1 }) => {
+                const data = await readDB('habit') || { groups: [], habits: [], logs: {} };
+                let group = data.groups.find(g => g.name.toLowerCase() === groupName.toLowerCase());
+                if (!group) {
+                    group = { id: 'g' + Date.now(), name: groupName, color: '#4f46e5' };
+                    data.groups.push(group);
+                }
+                data.habits.push({ id: 'h' + Date.now(), groupId: group.id, name: name, type: type, target: target, freq: { weekDays: [0,1,2,3,4,5,6], monthDays: [] }, growth: { enabled: false } });
+                await writeDB('habit', data);
+                return `Habit "${name}" created.`;
+            },
+
+
+	    create_multiple_habits: async ({ habits = [] }) => {
+                const data = await readDB('habit') || { groups: [], habits: [], logs: {} };
+                let count = 0;
+                
+                for(let i = 0; i < habits.length; i++) {
+                    let h = habits[i];
+                    let group = data.groups.find(g => g.name.toLowerCase() === h.groupName.toLowerCase());
+                    if (!group) {
+                        // id তে i যোগ করা হয়েছে যাতে একসাথে বানালে id ডুপ্লিকেট না হয়
+                        group = { id: 'g' + Date.now() + i, name: h.groupName, color: '#4f46e5' };
+                        data.groups.push(group);
+                    }
+                    data.habits.push({ 
+                        id: 'h' + Date.now() + i, 
+                        groupId: group.id, 
+                        name: h.name, 
+                        type: h.type || 'check', 
+                        target: h.target || 1, 
+                        freq: { weekDays: [0,1,2,3,4,5,6], monthDays: [] }, 
+                        growth: { enabled: false } 
+                    });
+                    count++;
+                }
+                
+                await writeDB('habit', data);
+                return `SUCCESS: ${count} habits created perfectly.`;
+            },
+
+
+
+
+
+get_specific_habit_stats: async ({ habitName }) => {
+                const data = await readDB('habit');
+                if (!data || !data.habits) return "Database is empty.";
+
+                const habit = data.habits.find(h => h.name.toLowerCase().includes(habitName.toLowerCase()));
+                if (!habit) return `Error: Habit matching "${habitName}" not found.`;
+
+                // 1. Value Parser (Clock, Duration, Check handling exactly like h.html)
+                const parseVal = (v, t) => {
+                    if (v === null || v === undefined || v === 'skip') return 0;
+                    if (t === 'check') return (v == 1 || v === 'true') ? 1 : 0;
+                    if (t === 'clock' && typeof v === 'string' && v.includes(':')) {
+                        const [h, m] = v.split(':').map(Number); return (h * 60) + m;
+                    }
+                    return parseFloat(v) || 0;
+                };
+
+                // 2. Schedule Logic (Is this day actually scheduled?)
+                const isHabitDay = (d, freq) => {
+                    if (!freq) return true;
+                    const w = freq.weekDays || [], m = freq.monthDays || [];
+                    if (w.length === 0 && m.length === 0) return true;
+                    const dw = d.getDay(), dm = d.getDate();
+                    if (w.length > 0 && m.length > 0) return w.includes(dw) && m.includes(dm);
+                    if (w.length > 0) return w.includes(dw);
+                    if (m.length > 0) return m.includes(dm);
+                    return true;
+                };
+
+                // 3. Direction Logic (Increase vs Decrease Habit)
+                const targetBase = parseVal(habit.target, habit.type);
+                const minBase = parseVal(habit.minTarget, habit.type);
+                const isDecreasing = minBase > targetBase; 
+
+                // 4. Lifespan Calculation
+                let firstLogTs = parseInt(habit.id.substring(1)) || Date.now();
+                const prefix = habit.id + '_';
+                Object.keys(data.logs).forEach(k => {
+                    if (k.startsWith(prefix)) {
+                        const d = new Date(k.split('_')[1]).getTime();
+                        if (d < firstLogTs) firstLogTs = d;
+                    }
+                });
+
+                const startDate = new Date(firstLogTs); startDate.setHours(0,0,0,0);
+                const today = new Date(); today.setHours(0,0,0,0);
+
+                let success = 0, fail = 0, skip = 0, miss = 0;
+                let currentStreak = 0, bestStreak = 0;
+                let trustGreen = 0, trustLate = 0;
+                let validValues = [];
+                // Sun (0) to Sat (6) Performance Matrix
+                let dayStats = [ {t:0, s:0}, {t:0, s:0}, {t:0, s:0}, {t:0, s:0}, {t:0, s:0}, {t:0, s:0}, {t:0, s:0} ];
+
+                const last14Days = [];
+
+                // 5. Time Machine Loop (Scanning every single day)
+                for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
+                    const isScheduled = isHabitDay(d, habit.freq);
+                    const dStr = d.toISOString().split('T')[0];
+                    const log = data.logs[`${prefix}${dStr}`];
+                    
+                    let dayStatus = "Not_Scheduled";
+                    
+                    if (isScheduled) {
+                        dayStats[d.getDay()].t++;
+                        if (log) {
+                            if (log.val === 'skip') {
+                                skip++; dayStatus = "Skipped";
+                            } else {
+                                const uVal = parseVal(log.val, habit.type);
+                                let isSuccess = false;
+                                if (habit.type === 'check') isSuccess = (uVal === 1);
+                                else if (isDecreasing) isSuccess = (uVal <= targetBase);
+                                else isSuccess = (uVal >= targetBase);
+
+                                if (isSuccess) {
+                                    success++; dayStatus = "Success";
+                                    dayStats[d.getDay()].s++;
+                                    currentStreak++;
+                                    if (currentStreak > bestStreak) bestStreak = currentStreak;
+                                } else {
+                                    fail++; dayStatus = "Failed";
+                                    currentStreak = 0;
+                                }
+                                validValues.push(uVal);
+
+                                // Trust Logic (Did they log on time?)
+                                if (log.ts) {
+                                    const entryDate = new Date(log.ts); entryDate.setHours(0,0,0,0);
+                                    const diff = Math.floor((entryDate - new Date(dStr)) / 86400000);
+                                    if (diff <= 1) trustGreen++; else trustLate++; 
+                                }
+                            }
+                        } else {
+                            if (d < today) miss++; 
+                            dayStatus = "Missed";
+                            currentStreak = 0;
+                        }
+                    }
+
+                    // Collect Last 14 Days
+                    const daysDiffToToday = Math.floor((today - d) / 86400000);
+                    if (daysDiffToToday < 14) {
+                        last14Days.push({ 
+                            date: dStr, 
+                            day: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()], 
+                            status: dayStatus, 
+                            logged_value: (log && log.val !== 'skip') ? log.val : "None" 
+                        });
+                    }
+                }
+
+                // 6. Deep Analytics Math
+                const totalActive = success + fail;
+                const winRate = totalActive > 0 ? Math.round((success / totalActive) * 100) : 0;
+                
+                // Stability (Standard Deviation / Coefficient of Variation)
+                let avgVal = 0, cv = 0;
+                if (habit.type !== 'check' && validValues.length > 0) {
+                    avgVal = validValues.reduce((a,b)=>a+b, 0) / validValues.length;
+                    const variance = validValues.reduce((a,b) => a + Math.pow(b - avgVal, 2), 0) / validValues.length;
+                    cv = avgVal ? (Math.sqrt(variance) / avgVal) : 0; 
+                }
+
+                // Best/Worst Day Calculation
+                let bestDayIdx = 0, maxRate = -1;
+                dayStats.forEach((ds, idx) => {
+                    const r = ds.t > 0 ? (ds.s / ds.t) : -1;
+                    if(r > maxRate) { maxRate = r; bestDayIdx = idx; }
+                });
+                const daysArr = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+                return JSON.stringify({
+                    habit_identity: { 
+                        name: habit.name, 
+                        type: habit.type, 
+                        target: habit.type === 'clock' ? habit.target + " (Time)" : habit.target,
+                        logic: isDecreasing ? "Goal is to stay BELOW target (Decrease)" : "Goal is to stay ABOVE target (Increase)"
+                    },
+                    core_performance: {
+                        win_rate_percentage: winRate + "%",
+                        current_streak: currentStreak,
+                        best_streak: bestStreak,
+                        total_missed_days_due_to_laziness: miss
+                    },
+                    data_science_insights: {
+                        average_output: avgVal.toFixed(2),
+                        stability_verdict: cv < 0.2 ? "Rock Solid (Robotic consistency)" : (cv < 0.5 ? "Normal Variation" : "Highly Volatile (Relies on motivation, unstable)"),
+                        biological_peak_day: dayStats[bestDayIdx].t > 0 ? daysArr[bestDayIdx] : "Not enough data",
+                        trust_integrity_score: trustGreen >= trustLate ? "High (Logs immediately)" : "Low (Logs data late, untrustworthy memory)"
+                    },
+                    recent_14_days_timeline: last14Days.reverse() // Gives AI the visual strip
+                });
+            },
+
+
+
+
+            get_planner_data: async ({ startDate, endDate }) => {
+                const data = await readDB('planner') || {};
+                let result = { dates: {} };
+                const end = endDate || startDate;
+                let current = new Date(startDate);
+                const last = new Date(end);
+                while (current <= last) {
+                    const dateStr = current.toISOString().split('T')[0];
+                    if (data[dateStr]) {
+                        result.dates[dateStr] = {
+                            pins: data[dateStr].pins,
+                            tasks: data[dateStr].tasks.map(t => ({ txt: t.txt, status: t.status })),
+                            docsCount: data[dateStr].notes ? data[dateStr].notes.length : 0
+                        };
+                    }
+                    current.setDate(current.getDate() + 1);
+                }
+                result.general_tasks = data.general?.tasks ? data.general.tasks.map(t => t.txt) : [];
+                return JSON.stringify(result);
+            },
+            get_projects_list: async () => {
+                const data = await readDB('planner') || {};
+                if (!data.projects || data.projects.length === 0) return "No projects found.";
+                return JSON.stringify(data.projects.map((p, i) => ({ title: p.title, taskCount: p.tasks.length, docCount: p.docs.length })));
+            },
+            add_to_project: async ({ projectName, type, content, desc = "" }) => {
+                let data = await readDB('planner') || {};
+                if (!data.projects) return "Error: No projects exist.";
+                let proj = data.projects.find(p => p.title.toLowerCase().includes(projectName.toLowerCase()));
+                if (!proj) return `Error: Project matching "${projectName}" not found.`;
+                const now = new Date().toISOString();
+                let safeContent = typeof content === 'string' ? content : JSON.stringify(content);
+                let safeDesc = typeof desc === 'string' ? desc : "";
+                if (type === 'task') {
+                    proj.tasks.push({ txt: safeContent, desc: safeDesc, status: 'pending' });
+                } else if (type === 'doc') {
+                    proj.docs.push({ html: safeContent, bg: '#ffffff', created: now, updated: now, isPinned: false });
+                }
+                await writeDB('planner', data);
+                return `SUCCESS: Added ${type} to project "${proj.title}".`;
+            },
+            advanced_planner_update: async ({ updates = [] }) => {
+                let data = await readDB('planner') || {};
+                const now = new Date().toISOString();
+                let count = 0;
+                if (typeof updates === 'string') { try { updates = JSON.parse(updates); } catch(e) { updates = []; } }
+                updates.forEach(item => {
+                    const target = item.target || "general";
+                    const type = item.type || "task";
+                    let content = typeof item.content === 'string' ? item.content : JSON.stringify(item.content || "Untitled");
+                    let desc = typeof item.desc === 'string' ? item.desc : (item.desc ? JSON.stringify(item.desc) : "");
+                    let time = item.time || "";
+                    if (!data[target]) data[target] = { bg: '#ffffff', pins: [], tasks: [], notes: [] };
+                    if (type === 'pin') {
+                        data[target].pins.push({ txt: content, time: time });
+                    } else if (type === 'task') {
+                        data[target].tasks.push({ txt: content, desc: desc, time: time, status: 'pending', createdAt: now, isPinned: false });
+                    } else if (type === 'doc') {
+                        data[target].notes.push({ html: content, bg: '#ffffff', createdAt: now, isPinned: false });
+                    }
+                    count++;
+                });
+                await writeDB('planner', data);
+                return `SUCCESS: Applied ${count} updates.`;
+            },
+
+
+create_full_project: async ({ title, tasks = [], docs = [] }) => {
+                let data = await readDB('planner') || {};
+                if (!data.projects) data.projects = [];
+                const now = new Date().toISOString();
+
+                // টাস্ক এবং ডক ফরম্যাটিং
+                const formattedTasks = tasks.map(t => {
+                    if (typeof t === 'string') return { txt: t, desc: "", status: 'pending' };
+                    return { txt: String(t.txt || t.title || t.content || "Untitled Task"), desc: String(t.desc || t.description || ""), status: 'pending' };
+                });
+                const formattedDocs = docs.map(d => {
+                    let htmlStr = "";
+                    if (typeof d === 'string') { htmlStr = d; } else {
+                        htmlStr = d.html || d.content || d.text || JSON.stringify(d);
+                        if (d.title) htmlStr = `<h2>${d.title}</h2><br>${htmlStr}`; 
+                    }
+                    return { html: String(htmlStr), bg: '#ffffff', created: now, updated: now, isPinned: false };
+                });
+
+                // 🌟 NEW LOGIC: Duplicate Check
+                // চেক করা হচ্ছে একই নামের কোনো প্রজেক্ট আগে থেকে আছে কি না (case-insensitive)
+                let existingProject = data.projects.find(p => p.title.toLowerCase().trim() === title.toLowerCase().trim());
+
+                if (existingProject) {
+                    // যদি আগে থেকেই থাকে, তবে নতুন টাস্ক এবং ডকগুলো ওই পুরনো প্রজেক্টেই যোগ (Merge) করে দাও
+                    existingProject.tasks.push(...formattedTasks);
+                    existingProject.docs.unshift(...formattedDocs); // নতুন ডকগুলো শুরুতে অ্যাড হবে
+                    
+                    await writeDB('planner', data);
+                    return `SUCCESS: Project "${title}" already existed. Merged ${formattedTasks.length} new tasks and ${formattedDocs.length} new docs into the existing project.`;
+                } else {
+                    // যদি না থাকে, তবে সম্পূর্ণ নতুন প্রজেক্ট তৈরি করো
+                    data.projects.unshift({ title: String(title || "New Project"), created: now, tasks: formattedTasks, docs: formattedDocs });
+                    
+                    await writeDB('planner', data);
+                    return `SUCCESS: Project "${title}" created perfectly with ${formattedTasks.length} tasks and ${formattedDocs.length} documents.`;
+                }
+            },
+
+
+
+
+
+
+get_project_details: async ({ projectName }) => {
+                const data = await readDB('planner') || {};
+                if (!data.projects || data.projects.length === 0) return "No projects exist.";
+                
+                const proj = data.projects.find(p => p.title.toLowerCase().includes(projectName.toLowerCase()));
+                if (!proj) return `Error: Project matching "${projectName}" not found.`;
+                
+                // প্রোগ্রেস ক্যালকুলেশন
+                const totalTasks = proj.tasks.length;
+                const doneTasks = proj.tasks.filter(t => t.status === 'done').length;
+                const progress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+
+                return JSON.stringify({
+                    project_title: proj.title,
+                    overall_progress: `${progress}%`,
+                    total_tasks: totalTasks,
+                    completed_tasks: doneTasks,
+                    tasks_list: proj.tasks.map(t => ({ task_name: t.txt, status: t.status, description: t.desc })),
+                    total_documents: proj.docs.length
+                });
+            },
+
+            update_task_status: async ({ location, contextName, taskSearchText, status }) => {
+                let data = await readDB('planner') || {};
+                let tasksList = [];
+                let saveTarget = "";
+                
+                // ক্যালেন্ডার নাকি প্রজেক্ট, সেটা ফিল্টার করা
+                if (location === 'project') {
+                    if (!data.projects) return "No projects found.";
+                    let proj = data.projects.find(p => p.title.toLowerCase().includes(contextName.toLowerCase()));
+                    if (!proj) return `Project "${contextName}" not found.`;
+                    tasksList = proj.tasks;
+                    saveTarget = `Project: ${proj.title}`;
+                } else {
+                    let targetDate = contextName === 'general' ? 'general' : contextName;
+                    if (!data[targetDate] || !data[targetDate].tasks) return `No tasks found on ${contextName}.`;
+                    tasksList = data[targetDate].tasks;
+                    saveTarget = `Calendar: ${contextName}`;
+                }
+
+                // টাস্ক খুঁজে বের করা এবং স্ট্যাটাস আপডেট করা
+                let task = tasksList.find(t => t.txt.toLowerCase().includes(taskSearchText.toLowerCase()));
+                if (!task) return `Error: Task matching "${taskSearchText}" not found in ${saveTarget}.`;
+                
+                task.status = status; // 'done', 'pending', or 'skip'
+                await writeDB('planner', data);
+                return `SUCCESS: Marked task "${task.txt}" as [${status.toUpperCase()}] in ${saveTarget}.`;
+            },
+
+
+
+// --- NEW TOOLS ADDED HERE ---
+
+            get_time_studio_data: async () => {
+                const data = await readDB('time');
+                if(!data || data.length === 0) return "No active timers or stopwatches found.";
+                
+                // শুধুমাত্র দরকারি ডেটা AI কে দেওয়া হচ্ছে
+                const activeTrackers = data.map(i => {
+                    let timeVal = i.type === 'timer' ? `${Math.round(i.duration/60000)} mins` : `${Math.round(i.acc/60000)} mins logged`;
+                    return `- ${i.title} [${i.type.toUpperCase()}] -> Status: ${i.status}, Value: ${timeVal}`;
+                }).join('\n');
+                
+                return `Current Time Trackers:\n${activeTrackers}`;
+            },
+
+            get_global_summary: async () => {
+                const habits = await readDB('habit');
+                const planner = await readDB('planner');
+                const time = await readDB('time');
+                
+                let hCount = habits?.habits?.length || 0;
+                let pCount = planner?.projects?.length || 0;
+                let tCount = time?.length || 0;
+                
+                return `SYSTEM OVERVIEW: The user currently has ${hCount} Habits, ${pCount} active Projects, and ${tCount} Time Trackers running.`;
+            },
+
+            delete_item: async ({ type, name }) => {
+                if(type === 'project') {
+                    let data = await readDB('planner') || {};
+                    if(!data.projects) return "No projects exist.";
+                    const initialLen = data.projects.length;
+                    data.projects = data.projects.filter(p => !p.title.toLowerCase().includes(name.toLowerCase()));
+                    
+                    if(data.projects.length === initialLen) return `Error: Project matching "${name}" not found.`;
+                    
+                    await writeDB('planner', data);
+                    return `SUCCESS: Project "${name}" and all its contents have been permanently deleted.`;
+                }
+                return "Error: Unsupported delete type. Currently only 'project' is supported.";
+            },
+
+
+
+
+log_habit_entry: async ({ habitName, date, value, note = "" }) => {
+                const data = await readDB('habit') || {};
+                if (!data.habits) return "No habit data found.";
+                
+                const habit = data.habits.find(h => h.name.toLowerCase().includes(habitName.toLowerCase()));
+                if (!habit) return `Error: Habit matching "${habitName}" not found.`;
+                
+                // ডেট ফরম্যাট নিশ্চিত করা
+                const targetDate = date || new Date().toISOString().split('T')[0];
+                const key = `${habit.id}_${targetDate}`;
+                
+                // লগ এন্ট্রি তৈরি করা
+                data.logs[key] = { val: value, note: note, ts: Date.now() };
+                await writeDB('habit', data);
+                
+                return `SUCCESS: Logged value '${value}' for habit "${habit.name}" on ${targetDate}.`;
+            },
+            
+            delete_habit: async ({ habitName }) => {
+                let data = await readDB('habit') || {};
+                const habit = data.habits.find(h => h.name.toLowerCase().includes(habitName.toLowerCase()));
+                if (!habit) return `Error: Habit "${habitName}" not found.`;
+                
+                // হ্যাবিট এবং তার সব লগ মুছে ফেলা
+                data.habits = data.habits.filter(h => h.id !== habit.id);
+                Object.keys(data.logs).forEach(key => {
+                    if (key.startsWith(habit.id + '_')) delete data.logs[key];
+                });
+                
+                await writeDB('habit', data);
+                return `SUCCESS: Habit "${habit.name}" and all its history have been permanently deleted.`;
+            },
+
+
+
+create_timer: async ({ title, minutes }) => {
+                let data = await readDB('time') || [];
+                const durationMs = minutes * 60000;
+                
+                const newTimer = { 
+                    id: Date.now(), 
+                    type: 'timer', 
+                    title: title || 'AI Timer', 
+                    start: null, 
+                    acc: 0, 
+                    duration: durationMs, 
+                    status: 'stopped' 
+                };
+                
+                data.push(newTimer);
+                await writeDB('time', data);
+                return `SUCCESS: Created a ${minutes}-minute timer named "${title}". The user can start it from the Time Studio tab.`;
+            },
+
+
+
+
+
+
+
+
+// --- NEW: LOCATION & WEATHER TOOLS ---
+get_current_location: async () => {
+  try {
+    const res = await fetch('http://ip-api.com/json/');
+    const data = await res.json();
+
+    return JSON.stringify({
+      source: "ip-api.com",
+      location: data
+    });
+  } catch (e) {
+    return JSON.stringify({
+      error: "LOCATION_FETCH_FAILED"
+    });
+  }
+},
+
+
+
+/*
+            get_current_location: async () => {
+                // IP Address ব্যবহার করে ইউজারের বর্তমান লোকেশন বের করা (কোনো GPS পারমিশন লাগবে না)
+                try {
+                    const res = await fetch('https://ipapi.co/json/');
+                    const data = await res.json();
+                    return `SYSTEM_INFO: The user is currently in ${data.city}, ${data.region}, ${data.country_name}. 
+                            Latitude: ${data.latitude}, Longitude: ${data.longitude}. 
+                            Local Currency: ${data.currency} (${data.currency_name}). 
+                            Timezone: ${data.timezone}.`;
+                } catch(e) {
+                    return "Error fetching location. Ask the user where they are.";
+                }
+            },
+*/
+
+            get_live_weather: async ({ location_name }) => {
+                // wttr.in নামক ফ্রি API থেকে লাইভ আবহাওয়া আনা (কোনো API Key লাগবে না)
+                try {
+                    const res = await fetch(`https://wttr.in/${encodeURIComponent(location_name)}?format=j1`);
+                    const data = await res.json();
+                    const current = data.current_condition[0];
+                    const tomorrow = data.weather[1]; // আগামীকালের আবহাওয়া
+                    
+                    return `Weather for ${location_name}:
+                            Currently: ${current.weatherDesc[0].value}, Temperature: ${current.temp_C}°C (Feels like ${current.FeelsLikeC}°C).
+                            Humidity: ${current.humidity}%, Wind: ${current.windspeedKmph} km/h.
+                            Tomorrow's Forecast: Max Temp ${tomorrow.maxtempC}°C, Min Temp ${tomorrow.mintempC}°C.`;
+                } catch(e) {
+                    return `Error fetching weather for ${location_name}.`;
+                }
+            },
+
+
+// --- NEW: DEEP ACCURACY TRAVEL TOOLS ---
+
+            get_currency_exchange: async ({ base_currency, target_currency }) => {
+                // লাইভ কারেন্সি রেট বের করার ফ্রি API
+                try {
+                    const res = await fetch(`https://open.er-api.com/v6/latest/${base_currency.toUpperCase()}`);
+                    const data = await res.json();
+                    const rate = data.rates[target_currency.toUpperCase()];
+                    if(!rate) return `Error: Currency ${target_currency} not found.`;
+                    return `LIVE EXCHANGE RATE: 1 ${base_currency.toUpperCase()} = ${rate} ${target_currency.toUpperCase()} (Last Update: ${data.time_last_update_utc})`;
+                } catch(e) {
+                    return "Error fetching exchange rates.";
+                }
+            },
+
+            search_wikipedia: async ({ query }) => {
+                // কোনো জায়গা, হোটেল বা খাবার সম্পর্কে একদম সঠিক তথ্য জানার জন্য
+                try {
+                    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`);
+                    const data = await res.json();
+                    if(data.type === "disambiguation" || data.title === "Not found.") return `No exact Wikipedia match for ${query}.`;
+                    return `FACT CHECK [${data.title}]: ${data.extract}`;
+                } catch(e) {
+                    return `Error fetching facts for ${query}.`;
+                }
+            },
+
+
+
+
+
+
+
+// --- NEW: DEEP LEARNING & DYNAMIC EXECUTION TOOLS ---
+
+            read_webpage: async ({ url }) => {
+                // ইন্টারনেট থেকে যেকোনো আর্টিকেল বা ওয়েবসাইটের লেখা পড়ার জন্য (CORS Proxy ব্যবহার করে)
+                try {
+                    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+                    const data = await res.json();
+                    
+                    // HTML থেকে শুধু দরকারি টেক্সট (Plain Text) বের করে আনা
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(data.contents, 'text/html');
+                    
+                    // স্ক্রিপ্ট এবং স্টাইল বাদ দেওয়া
+                    doc.querySelectorAll('script, style, nav, footer, iframe').forEach(el => el.remove());
+                    
+                    // টেক্সট লিমিট করা যাতে টোকেন লিমিট ক্রস না করে (প্রথম ৫০০০ ক্যারেক্টার)
+                    const text = doc.body.textContent.replace(/\s+/g, ' ').trim().substring(0, 5000);
+                    return `WEB DATA [${url}]: ${text}... (Truncated for memory)`;
+                } catch(e) {
+                    return `Error reading webpage: ${url}. Try searching Wikipedia instead.`;
+                }
+            },
+
+
+
+execute_dynamic_code: async ({ javascript_code, purpose }) => {
+                try {
+                    // সাধারণ Function এর বদলে AsyncFunction তৈরি করা হচ্ছে। 
+                    // এতে AI কোডের ভেতরে 'await', 'import()' ইত্যাদি ব্যবহার করতে পারবে।
+                    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+                    
+                    const safeRunner = new AsyncFunction(`
+                        "use strict";
+                        try {
+                            ${javascript_code}
+                        } catch(err) {
+                            return "Execution Error: " + err.message;
+                        }
+                    `);
+                    
+                    // কোড রান করে await করা হচ্ছে (যেহেতু AI Promise বা Worker ব্যবহার করতে পারে)
+                    const result = await safeRunner();
+                    
+                    // রেজাল্ট হ্যান্ডলিং
+                    let finalResult;
+                    if (result === undefined) finalResult = "Executed successfully, but returned nothing (undefined).";
+                    else if (typeof result === 'object') finalResult = JSON.stringify(result, null, 2);
+                    else finalResult = String(result);
+                    
+                    return `EXECUTION SUCCESS [Purpose: ${purpose}]:\nResult:\n${finalResult}`;
+                } catch(e) {
+                    return `System Error in execute_dynamic_code: ${e.message}. Tell the user to check the code.`;
+                }
+            },
+
+
+
+
+
+
+        };
+
+        /**
+         * ----------------------------------------
+         * 3. LOGIC ENGINE (The Brain)
+         * ----------------------------------------
+         */
+	    let API_KEY = localStorage.getItem('gemini_neural_key') || '';
+        let CURRENT_MODEL = localStorage.getItem('gemini_selected_model') || 'models/gemini-2.5-flash';
+        
+        const modelSelect = document.getElementById('model-select');
+        const modelBadge = document.getElementById('current-model-badge');
+
+        function updateUIModel() {
+            modelBadge.textContent = CURRENT_MODEL.replace('models/', '');
+        }
+        updateUIModel();
+
+
+
+
+
+
+
+
+
+function toggleAiDropdown() {
+    document.getElementById('aiModelList').classList.toggle('show');
+    document.getElementById('aiModelSelectedBtn').classList.toggle('active');
+    const arrow = document.getElementById('aiModelArrow');
+    arrow.style.transform = arrow.style.transform === 'rotate(180deg)' ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+
+function selectAiModel(val, text) {
+    document.getElementById('model-select').value = val;
+    document.getElementById('aiModelText').innerText = text;
+    toggleAiDropdown();
+}
+
+// Update the fetchModels function inside c.html to populate this new custom dropdown
+async function fetchModels() {
+    const key = document.getElementById('api-key-input').value.trim();
+    if(!key) { window.parent.showAlert("Missing Key", "Please enter your API key first."); return; }
+    const btn = document.getElementById('btn-fetch-models'); btn.textContent = "Loading...";
+    try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+        const data = await res.json();
+        if(data.error) throw new Error(data.error.message);
+        
+        const list = document.getElementById('aiModelList'); list.innerHTML = '';
+        const filtered = data.models.filter(m => m.supportedGenerationMethods.includes('generateContent'));
+        
+        filtered.forEach(m => {
+            const div = document.createElement('div');
+            div.className = 'dropdown-item';
+            div.innerText = m.displayName;
+            div.onclick = () => selectAiModel(m.name, m.displayName);
+            list.appendChild(div);
+        });
+        window.parent.showAlert("Success", `${filtered.length} AI models fetched!`);
+    } catch(e) { window.parent.showAlert("Connection Error", e.message); } 
+    finally { btn.textContent = "Fetch Models"; }
+}
+
+
+
+
+
+
+
+
+
+        
+        const TODAY_ISO = new Date().toISOString().split('T')[0];
+        const TODAY_STR = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+
+
+
+
+const SYSTEM_INSTRUCTION = `
+You are the "Neural OS Agent", a highly advanced AI managing the user's Life Operating System. Act as an expert Data Scientist, Project Manager, and Cognitive Behavioral Coach.
+Today's Date is: ${TODAY_ISO} (${TODAY_STR}). Use this to calculate actual YYYY-MM-DD dates!
+
+**CRITICAL RULES:**
+1. WHEN the user asks to create a project, 
+you MUST call the tool "create_full_project".
+
+You are FORBIDDEN to describe the project in text.
+You MUST reply with ONLY valid JSON in this format:
+
+{
+  "tool": "create_full_project",
+  "args": { ... }
+}
+YOU MUST USE TOOLS. Reply with ONLY a JSON block when using a tool. Do not write anything outside the JSON if invoking a tool.
+2. For DOCS/Notes, you MUST use rich HTML formatting (<h1>, <ul>, <li>, <strong>, etc.).
+3. For TASKS, "txt" and "desc" must be plain strings.
+4. As a Project Manager, check project details before modifying them. Praise the user when they mark tasks as 'done'.
+5. NO HALLUCINATION: Never guess the user's data. If you don't know something, ALWAYS use a "get_..." tool to fetch the real data from the database first.
+6. ERROR RECOVERY: If you receive a "SYSTEM_OUTPUT: Error...", apologize to the user, analyze the error, and automatically invoke the tool again with corrected arguments.
+7. MULTI-TOOL CHAINING: You are allowed to use multiple tools sequentially. For example, first 'get_projects_list', analyze it, and then 'update_task_status'.
+8. TIME AWARENESS: Always reference the current Date and Time provided in this prompt when scheduling tasks or analyzing streaks. Do not schedule tasks in the past.
+9. DESTRUCTIVE ACTIONS: Always ask for explicit user confirmation before executing any tool that deletes data or overwrites a full project.
+10. AVOID DUPLICATES: Before creating a new Habit or Project, ALWAYS use 'get_habit_structure' or 'get_projects_list' to check if it already exists. If it exists, use update tools ('add_to_project' etc.) instead of creating a new one.
+
+11. THE ULTIMATE TRAVEL ALGORITHM (FOR DEEP ACCURACY): When asked to plan a tour, you MUST follow this exact sequence:
+    Step 1: Run 'get_current_location' to find user's origin.
+    Step 2: Run 'get_live_weather' for the destination to predict packing needs.
+    Step 3: Run 'search_wikipedia' for the destination to get accurate tourist spots, local foods, and facts (NEVER invent fake places).
+    Step 4: If traveling internationally, run 'get_currency_exchange'.
+    Step 5: Generate an extremely accurate 'create_full_project'.
+
+12. PROJECT FORMATTING RULE: When using 'create_full_project' for a tour, the "tasks" array MUST contain chronologically ordered action items (e.g., Booking, Packing, Transport). The "docs" array MUST contain rich HTML documents broken down into: 
+    - 🗓️ Itinerary (Day 1, Day 2 with exact estimated times).
+    - 💰 Budget Estimation (Transport, Hotel, Food based on actual global averages).
+    - 🎒 Smart Packing List (Directly influenced by the live weather data).
+    - 🍔 Authentic Local Cuisine (Based on Wikipedia facts).
+
+
+13. SELF-DIRECTED LEARNING & COMPUTATION: 
+    - If the user asks you to learn about a complex topic, use 'search_wikipedia'. If you need deeper knowledge from a specific link, use 'read_webpage' to read the article.
+    - If the user asks for complex math, data sorting, or logic that requires coding, DO NOT GUESS. Use 'execute_dynamic_code' to write your own JavaScript, execute it safely, and return the exact mathematical or logical result. The code MUST contain a 'return' statement at the end.
+
+13. BROWSER NATIVE EXECUTION & SUPERCOMPUTING: 
+    - You are executing code inside a MODERN WEB BROWSER environment (not Node.js).
+    - Your 'execute_dynamic_code' tool runs inside an AsyncFunction. This means you CAN use 'await' inside your code.
+    - EXTERNAL LIBRARIES: You can dynamically import any NPM package using ESM CDNs. Example: const _ = await import('https://esm.sh/lodash');
+    - WEB WORKERS: If the user asks for extremely heavy calculations (like processing millions of rows, finding large primes, etc.), DO NOT block the main thread. Create an inline Web Worker using a Blob URL, wrap it in a Promise, and await the result. 
+    Example: 
+    const workerCode = "self.onmessage = function(e){ let sum=0; for(let i=0;i<1e9;i++)sum+=i; self.postMessage(sum); }";
+    const blob = new Blob([workerCode], {type: 'application/javascript'});
+    const worker = new Worker(URL.createObjectURL(blob));
+    // then wrap in Promise to get result...
+    - The code MUST contain a 'return' statement at the end to pass the final result back to the system.
+
+
+
+**AVAILABLE TOOLS (OUTPUT EXACT JSON):**
+
+// --- NEW GLOBAL & TIME TOOLS ---
+- get_global_summary (Quick overview of Habits, Projects, and Timers): { "tool": "get_global_summary" }
+- get_time_studio_data (Check active timers/stopwatches): { "tool": "get_time_studio_data" }
+- delete_item (To safely delete a project): { "tool": "delete_item", "args": { "type": "project", "name": "React" } }
+
+// --- HABIT TOOLS ---
+- get_habit_structure: { "tool": "get_habit_structure" }
+- create_multiple_habits: { "tool": "create_multiple_habits", "args": { "habits": [ {"name": "Read Book", "groupName": "Growth", "type": "check"} ] } }
+- get_specific_habit_stats (Deep data science analysis of a single habit): { "tool": "get_specific_habit_stats", "args": { "habitName": "Reading" } }
+
+// --- PLANNER / CALENDAR TOOLS ---
+- get_planner_data: { "tool": "get_planner_data", "args": { "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD" } }
+- advanced_planner_update (Add task/pin to a specific date): { "tool": "advanced_planner_update", "args": { "updates": [ { "target": "YYYY-MM-DD", "type": "task", "content": "Clean room", "desc": "" } ] } }
+
+// --- PROJECT TOOLS ---
+- get_projects_list: { "tool": "get_projects_list" }
+- create_full_project: { "tool": "create_full_project", "args": { "title": "Learn React", "tasks": [{"txt": "Setup Vite", "desc": ""}], "docs": ["<h1>React Basics</h1>"] } }
+- get_project_details (To see inside a project, its tasks, and progress): { "tool": "get_project_details", "args": { "projectName": "React" } }
+- add_to_project: { "tool": "add_to_project", "args": { "projectName": "React", "type": "task", "content": "Learn Context API", "desc": "" } }
+
+// --- TASK STATUS UPDATER ---
+- update_task_status (To mark tasks as 'done', 'pending', or 'skip'):
+  { "tool": "update_task_status", "args": { "location": "project", "contextName": "React", "taskSearchText": "Setup Vite", "status": "done" } }
+  OR
+  { "tool": "update_task_status", "args": { "location": "calendar", "contextName": "YYYY-MM-DD", "taskSearchText": "Clean room", "status": "done" } }
+
+
+// --- ACTION & TIME TOOLS ---
+- log_habit_entry (To tick/mark a habit as done for a day): { "tool": "log_habit_entry", "args": { "habitName": "Water", "date": "YYYY-MM-DD", "value": 1, "note": "Drank after workout" } }
+- delete_habit: { "tool": "delete_habit", "args": { "habitName": "Smoking" } }
+- create_timer (To create a countdown timer): { "tool": "create_timer", "args": { "title": "Deep Work", "minutes": 25 } }
+
+
+// --- LOCATION & TRAVEL TOOLS ---
+- get_current_location (To know exactly where the user is right now): { "tool": "get_current_location" }
+- get_live_weather (To check weather before planning a tour): { "tool": "get_live_weather", "args": { "location_name": "Dhaka" } }
+
+// --- ACCURACY & RESEARCH TOOLS ---
+- get_currency_exchange: { "tool": "get_currency_exchange", "args": { "base_currency": "USD", "target_currency": "BDT" } }
+- search_wikipedia (To verify real places, hotels, or foods): { "tool": "search_wikipedia", "args": { "query": "Cox's Bazar" } }
+
+
+
+// --- LEARNING & DYNAMIC EXECUTION TOOLS ---
+- read_webpage (To read any article/website from the internet): { "tool": "read_webpage", "args": { "url": "https://example.com/article" } }
+- execute_dynamic_code (To write and run your own JS code for math/logic): { "tool": "execute_dynamic_code", "args": { "purpose": "Calculate compound interest", "javascript_code": "let p=1000, r=0.05, t=10; return p * Math.pow(1+r, t);" } }
+
+
+
+
+**WORKFLOW:**
+Understand Request -> Output JSON Tool Command -> Wait for SYSTEM_OUTPUT -> Reply nicely.
+`;
+
+
+
+
+
+
+
+
+
+
+
+        let currentChatId = Date.now();
+        let uiMessages = [];
+        let chatHistory = [
+            { role: "user", parts: [{ text: SYSTEM_INSTRUCTION }] },
+            { role: "model", parts: [{ text: "System Booted. Neural Agent ready with Bulletproof Project Engine." }] }
+        ];
+
+        function extractToolCommands(text) {
+            let results = [];
+            let startIdx = -1;
+            let balance = 0;
+            for (let i = 0; i < text.length; i++) {
+                if (text[i] === '{') {
+                    if (balance === 0) startIdx = i;
+                    balance++;
+                } else if (text[i] === '}') {
+                    balance--;
+                    if (balance === 0 && startIdx !== -1) {
+                        let candidate = text.substring(startIdx, i + 1);
+                        if (candidate.includes('"tool"')) {
+                            results.push({ fullMatch: candidate, index: startIdx });
+                        }
+                        startIdx = -1;
+                    }
+                }
+            }
+            return results;
+        }
+
+        async function callGemini(userPrompt) {
+            if(!API_KEY) return { error: "API Key Missing. Check Settings." };
+            chatHistory.push({ role: "user", parts: [{ text: userPrompt }] });
+
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${CURRENT_MODEL}:generateContent?key=${API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        contents: chatHistory.slice(-15),
+                        safetySettings: [{ category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }] 
+                    })
+                });
+
+                const data = await response.json();
+                if(!response.ok) throw new Error(data.error?.message || "API Error");
+
+                let aiResponse = data.candidates[0].content.parts[0].text;
+                let executed = false;
+                const foundCommands = extractToolCommands(aiResponse);
+                let cleanText = aiResponse;
+                let finalModelText = aiResponse;
+
+                if (foundCommands.length > 0) {
+                    for (const cmd of foundCommands) {
+                        try {
+                            const jsonObject = JSON.parse(cmd.fullMatch.replace(/[\u0000-\u001F\u007F-\u009F]/g, ""));
+                            if (jsonObject.tool && AgentTools[jsonObject.tool]) {
+                                addMessage(`<i>System: Running ${jsonObject.tool}...</i>`, 'tool-usage');
+                                const result = await AgentTools[jsonObject.tool](jsonObject.args || {});
+                                
+                                chatHistory.push({ role: "model", parts: [{ text: aiResponse }] });
+                                chatHistory.push({ role: "user", parts: [{ text: `SYSTEM_OUTPUT: ${result}` }] });
+                                executed = true;
+                            }
+                        } catch (e) {
+                            console.error("JSON parsing failed for:", cmd.fullMatch, e);
+                        }
+                        cleanText = cleanText.replace(cmd.fullMatch, "");
+                    }
+                }
+
+                cleanText = cleanText.replace(/```json|```|json:|JSON:|Json:|Code:|code:/gi, "").trim();
+
+                if (executed) {
+                    const finalRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${CURRENT_MODEL}:generateContent?key=${API_KEY}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: chatHistory.slice(-15) })
+                    });
+                    const finalData = await finalRes.json();
+                    let finalAiText = finalData.candidates[0].content.parts[0].text;
+                    const finalCommands = extractToolCommands(finalAiText);
+                    finalCommands.forEach(c => finalAiText = finalAiText.replace(c.fullMatch, ""));
+                    cleanText = finalAiText.replace(/```json|```|json:|JSON:|Json:/gi, "").trim();
+                    finalModelText = finalAiText; // Save the updated conversational text
+                }
+
+                chatHistory.push({ role: "model", parts: [{ text: finalModelText }] });
+                return { text: cleanText || "Target system updated successfully." };
+
+            } catch (e) {
+                return { error: "Neural Link Error: " + e.message };
+            }
+        }
+
+        /**
+         * ----------------------------------------
+         * 4. UI INTERACTION
+         * ----------------------------------------
+         */
+        const chatWin = document.getElementById('chat-window');
+        const userIn = document.getElementById('user-in');
+        const sendBtn = document.getElementById('send-btn');
+        const typingUi = document.getElementById('typing-ui');
+
+        function addMessage(text, type, save = true) {
+            const m = document.createElement('div');
+            m.className = type === 'tool-usage' ? 'tool-usage' : `msg ${type}`;
+            if(type === 'bot') m.innerHTML = marked.parse(text);
+            else m.innerHTML = text;
+            chatWin.appendChild(m);
+            chatWin.scrollTo({ top: chatWin.scrollHeight, behavior: 'smooth' });
+
+            if(save) {
+                uiMessages.push({text, type});
+                saveChatToDB();
+            }
+        }
+
+        async function handleSend() {
+            const txt = userIn.value.trim();
+            if(!txt) return;
+            
+            addMessage(txt, 'user');
+            userIn.value = '';
+            
+            typingUi.style.display = 'flex';
+            chatWin.appendChild(typingUi);
+            
+            const res = await callGemini(txt);
+            
+            typingUi.style.display = 'none';
+            if(res.error) addMessage(res.error, 'error', false); // Errors are not saved in memory
+            else addMessage(res.text, 'bot');
+        }
+
+        sendBtn.onclick = handleSend;
+        userIn.onkeypress = (e) => { if(e.key==='Enter') handleSend(); };
+
+        // Top Controls Handlers
+        document.getElementById('open-settings').onclick = () => {
+            document.getElementById('api-key-input').value = API_KEY;
+            document.getElementById('overlay').style.display='block';
+            setTimeout(()=>document.getElementById('settings-card').classList.add('active'),10);
+        };
+
+        document.getElementById('btn-fetch-models').onclick = fetchModels;
+
+        document.getElementById('save-settings').onclick = () => {
+            API_KEY = document.getElementById('api-key-input').value.trim();
+            CURRENT_MODEL = modelSelect.value || CURRENT_MODEL;
+            localStorage.setItem('gemini_neural_key', API_KEY);
+            localStorage.setItem('gemini_selected_model', CURRENT_MODEL);
+            updateUIModel();
+            document.getElementById('settings-card').classList.remove('active');
+            document.getElementById('overlay').style.display='none';
+            addMessage(`System linked. Model updated to ${CURRENT_MODEL.replace('models/', '')}`, 'bot', false);
+        };
+
+        document.getElementById('new-chat').onclick = () => {
+            chatWin.innerHTML = '';
+            uiMessages = [];
+            chatHistory = [
+                { role: "user", parts: [{ text: SYSTEM_INSTRUCTION }] },
+                { role: "model", parts: [{ text: "System Booted. Neural Agent ready with Bulletproof Project Engine." }] }
+            ];
+            currentChatId = Date.now();
+            addMessage("Memory Wiped. Neural OS Ready for new synapse.", 'bot', false);
+        };
+
+        // Open History Sidebar
+// Open History Sidebar (RAM Optimized)
+        document.getElementById('open-hist').onclick = async () => {
+            const list = document.getElementById('h-list');
+            list.innerHTML = '<div style="text-align:center; padding:20px; font-size:12px; color:#94a3b8;">Loading memory...</div>';
+            
+            document.getElementById('sidebar').classList.add('open');
+            document.getElementById('overlay').style.display = 'block';
+
+            // Fetch only lightweight metadata
+            const chats = await getChatListFromDB();
+            list.innerHTML = '';
+            
+            chats.forEach(chat => {
+                const d = document.createElement('div');
+                d.className = 'h-item';
+                d.innerHTML = `
+                    <span style="font-weight: 500; font-size: 14px;">${chat.title}</span>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.4;"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                `;
+
+                d.onclick = async () => {
+                    // Fetch FULL heavy data ONLY when clicked
+                    const fullChat = await loadSpecificChat(chat.id);
+                    if (!fullChat) return;
+
+                    chatWin.innerHTML = '';
+                    currentChatId = chat.id;
+                    uiMessages = fullChat.uiData || [];
+                    chatHistory = fullChat.apiData || [];
+                    
+                    uiMessages.forEach(m => {
+                        const div = document.createElement('div');
+                        div.className = m.type === 'tool-usage' ? 'tool-usage' : `msg ${m.type}`;
+                        if(m.type === 'bot') div.innerHTML = marked.parse(m.text);
+                        else div.innerHTML = m.text;
+                        chatWin.appendChild(div);
+                    });
+                    chatWin.scrollTo({ top: chatWin.scrollHeight, behavior: 'smooth' });
+
+                    document.getElementById('sidebar').classList.remove('open');
+                    document.getElementById('overlay').style.display = 'none';
+                };
+                list.appendChild(d);
+            });
+        };
+
+
+
+        // Clear All History
+
+	document.getElementById('clear-db').onclick = () => {
+	    window.parent.showConfirm("Wipe Memory?", "Erase all neural memory? This cannot be undone.", () => {
+	        const tx = chatDB.transaction("chats", "readwrite");
+	        tx.objectStore("chats").clear();
+	        document.getElementById('new-chat').click();
+	        document.getElementById('sidebar').classList.remove('open');
+	        document.getElementById('overlay').style.display = 'none';
+	    });
+	};
+
+
+        document.getElementById('overlay').onclick = () => {
+            document.getElementById('settings-card').classList.remove('active');
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('overlay').style.display='none';
+        };
+
+        // Canvas Background (Visuals)
+        const canvas = document.getElementById('neuralCanvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resize);
+        class P {
+            constructor() { this.reset(); }
+            reset() {
+                this.x = Math.random() * canvas.width; this.y = Math.random() * canvas.height;
+                this.vx = (Math.random()-0.5)*0.5; this.vy = (Math.random()-0.5)*0.5;
+                this.size = Math.random()*2;
+            }
+            update() {
+                this.x+=this.vx; this.y+=this.vy;
+                if(this.x<0||this.x>canvas.width||this.y<0||this.y>canvas.height) this.reset();
+            }
+            draw() {
+                ctx.fillStyle = 'rgba(79, 70, 229, 0.3)';
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill();
+            }
+        }
+        function initParticles() {
+            resize(); particles = [];
+            for(let i=0; i<60; i++) particles.push(new P());
+            animate();
+        }
+        function animate() {
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            particles.forEach(p => {
+                p.update(); p.draw();
+                particles.forEach(p2 => {
+                    let d = Math.hypot(p.x-p2.x, p.y-p2.y);
+                    if(d<100) {
+                        ctx.strokeStyle = `rgba(79, 70, 229, ${0.1 - d/1000})`;
+                        ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+                    }
+                });
+            });
+            requestAnimationFrame(animate);
+        }
+        initParticles();
+
+        window.onload = () => {
+            if(!API_KEY) addMessage("⚠️ Please set your API Key in settings to activate Neural OS.", 'bot', false);
+            else addMessage("Neural OS Online. Ready to manage your data.", 'bot', false);
+        };
+
+    </script>
+</body>
+</html>

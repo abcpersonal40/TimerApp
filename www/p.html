@@ -1,0 +1,3631 @@
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pro Planner V7.8</title>
+
+    <!-- QUILL CSS -->
+<link href="planner/quill.snow.css" rel="stylesheet">
+
+<!-- KaTeX for Formulas (Optional: যদি Math Formula দরকার হয়) -->
+<link rel="stylesheet" href="planner/katex.min.css" />
+<script src="planner/katex.min.js"></script>
+
+<!-- ১. Syntax Highlight (কোড কালার করার জন্য) -->
+<link href="planner/atom-one-dark.min.css" rel="stylesheet">
+<script src="planner/highlight.min.js"></script>
+
+<!-- ২. Image Resize Module (ছবি ছোট-বড় করার জন্য) -->
+
+
+
+
+<style>
+    /* --- THEME VARIABLES --- */
+    :root {
+        --primary: #6366f1;       
+        --primary-soft: #e0e7ff;
+        --bg-body: #f1f5f9;       
+        --surface: #ffffff;
+        --text-main: #334155;     
+        --text-sub: #94a3b8;      
+        --border: #cbd5e1;
+        
+        --danger: #f43f5e;
+        --success: #10b981;
+        --warn: #f59e0b;
+        --skip: #64748b;
+        
+        --shadow-float: 0 10px 40px -5px rgba(0,0,0,0.15);
+        --shadow-card: 0 2px 4px rgba(0,0,0,0.04);
+        
+        --font-stack: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* GLOBAL STYLES */
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
+    
+    /* --- KEYBOARD FIX (VERY IMPORTANT) --- */
+    /* এই অংশটি কিবোর্ড ওপেন করতে সাহায্য করে */
+    input, textarea, .ql-editor, .ql-editor * {
+        user-select: text !important;
+        -webkit-user-select: text !important;
+        cursor: text;
+    }
+
+    body {
+        font-family: var(--font-stack);
+        background: var(--bg-body); 
+        color: var(--text-main);
+        min-height: 100vh; width: 100vw; margin: 0;
+        overflow: auto; display: flex; flex-direction: column;
+    }
+
+    /* --- HEADER (Conflict Free) --- */
+    header {
+        height: 54px; background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0 12px; z-index: 20; position: relative;
+    }
+
+    .header-left { 
+        display: flex; align-items: center; gap: 8px; z-index: 5; flex: 1;
+    }
+
+    .view-toggle {
+        width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border);
+        background: var(--bg-body); color: var(--text-main); display: grid; place-items: center; cursor: pointer;
+        flex-shrink: 0;
+	transition: all 0.2s ease-in-out;
+    }
+    .view-toggle.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    /* Smart Clock */
+    .clock-widget {
+        display: flex; flex-direction: column; align-items: center;
+        line-height: 1; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        white-space: nowrap;
+    }
+    .clock-widget.centered {
+        position: absolute; left: 50%; transform: translateX(-50%);
+        align-items: center;
+    }
+    .clock-widget.mini-left {
+        position: relative; transform: none; 
+        align-items: flex-start; cursor: pointer;
+        background: var(--primary-soft); padding: 4px 8px; border-radius: 6px;
+    }
+    .clock-widget.mini-left .cw-time { color: var(--primary); font-size: 0.8rem; }
+    .clock-widget.mini-left .cw-date { display: none; } 
+    .clock-widget.mini-left::after { content: 'Return'; font-size: 0.55rem; color: var(--primary); font-weight: 700; }
+
+    .cw-time { font-size: 0.95rem; font-weight: 800; color: var(--text-main); }
+    .cw-date { font-size: 0.65rem; font-weight: 600; color: var(--text-sub); margin-top: 2px;}
+
+    /* Center Title */
+    .center-title {
+        position: absolute; left: 0; right: 0; text-align: center;
+        font-size: 1rem; font-weight: 800; color: var(--text-main);
+        opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        z-index: 1; padding: 0 60px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .center-title.visible { opacity: 1; }
+
+    /* Nav Buttons */
+    .nav-group { display: flex; gap: 2px; align-items: center; z-index: 5; flex-shrink: 0; }
+    .nav-btn { 
+        width: 30px; height: 30px; border-radius: 6px;
+        background: transparent; border: none; 
+        font-size: 1.2rem; color:var(--text-main); cursor:pointer; 
+        display: grid; place-items: center;
+    }
+    .nav-btn:active { background: var(--bg-body); }
+
+    /* --- CALENDAR --- */
+    main { flex: 1; padding: 0; overflow: hidden; display:flex; flex-direction:column; }
+    
+    .cal-grid { 
+        display: grid; 
+        grid-template-columns: repeat(7, 1fr); 
+        grid-auto-rows: minmax(70px, auto); 
+        gap: 1px;
+        overflow-y: auto; 
+        height: 100%; 
+        align-content: start;
+        background: var(--border); 
+        padding: 1px;
+    }
+    
+    .day-head {
+        background: var(--surface); position: sticky; top: 0; z-index: 10;
+        text-align: center; font-size: 0.55rem; font-weight: 800; color: var(--text-sub);
+        padding: 6px 0; border-bottom: 1px solid var(--border);
+    }
+    
+    .day {
+        background: var(--surface); padding: 4px;
+        display: flex; flex-direction: column; gap: 3px; cursor: pointer;
+        position: relative;
+    }
+    .day.today { background: #f8fafc; }
+    .day.today .date-num { background: var(--primary); color: #fff; }
+    
+    .date-num { 
+        font-size: 0.7rem; font-weight: 700; color: var(--text-sub); 
+        margin-left: auto; width: 20px; height: 20px; 
+        display: grid; place-items: center; border-radius: 5px;
+    }
+    
+    /* Chips & Indicators */
+    .pin-chip {
+        font-size: 0.6rem; font-weight: 600; padding: 2px 4px;
+        border-radius: 3px; background: var(--primary-soft); color: var(--primary);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        border-left: 2px solid var(--primary); display: block;
+    }
+    .pin-chip.is-late { background: #fee2e2; color: var(--danger); border-color: var(--danger); }
+    
+    .indicator-row { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; margin-top: auto; }
+    .idx-pill { font-size: 0.55rem; font-weight: 700; padding: 1px 4px; border-radius: 8px; }
+    .idx-p { background: #e0e7ff; color: #4f46e5; }
+    .idx-t { background: #dcfce7; color: #15803d; }
+    .idx-n { background: #fef3c7; color: #b45309; }
+    
+    .mini-dots { display: flex; gap: 2px; justify-content: flex-end; }
+    .m-dot { width: 4px; height: 4px; border-radius: 50%; }
+
+    /* --- PREMIUM PANEL --- */
+    .overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.15); backdrop-filter: blur(4px);
+        opacity: 0; pointer-events: none; transition: 0.3s; z-index: 50;
+    }
+    .overlay.active { opacity: 1; pointer-events: auto; }
+    
+    .sheet {
+        position: absolute; bottom: 0; left: 0; right: 0; height: 75vh; 
+        background: var(--surface); border-radius: 20px 20px 0 0; 
+        display: flex; flex-direction: column;
+        transform: translateY(110%); transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), height 0.3s;
+        box-shadow: var(--shadow-float); overflow: hidden;
+    }
+    .sheet.full-mode { height: 95vh; }
+    .overlay.active .sheet { transform: translateY(0); }
+
+    .sh-head { 
+        padding: 10px 16px; border-bottom: 1px solid var(--border); 
+        display: flex; justify-content: space-between; align-items: center; 
+        background: var(--surface); z-index: 5;
+    }
+    
+    .color-picker { display: flex; gap: 8px; }
+    .cp-dot { 
+        width: 18px; height: 18px; border-radius: 50%; cursor: pointer; 
+        border: 2px solid #fff; box-shadow: 0 0 0 1px #ddd;
+    }
+
+    .tabs { display: flex; padding: 0 16px; gap: 16px; border-bottom: 1px solid var(--border); margin-top: 5px;}
+    .tab { 
+        padding: 12px 0; border: none; background: transparent; 
+        color: var(--text-sub); font-weight: 700; font-size: 0.85rem; 
+        cursor: pointer; position: relative; 
+    }
+    .tab.active { color: var(--primary); }
+    .tab.active::after { 
+        content:''; position: absolute; bottom: -1px; left: 0; right: 0; 
+        height: 3px; background: var(--primary); border-radius: 3px; 
+    }
+
+    .filter-bar {
+        display: flex; gap: 8px; padding: 10px 16px; overflow-x: auto; border-bottom: 1px solid var(--border);
+    }
+    .f-chip {
+        padding: 4px 10px; border-radius: 20px; background: var(--bg-body); 
+        color: var(--text-sub); font-size: 0.7rem; font-weight: 700; border: 1px solid transparent; cursor: pointer;
+    }
+    .f-chip.active { background: var(--text-main); color: #fff; }
+
+    .sh-body { flex: 1; overflow-y: auto; padding: 10px 16px 80px 16px; }
+
+    /* Cards */
+    .card { 
+        background: #fff; padding: 12px; border-radius: 12px; margin-bottom: 10px; 
+        border: 1px solid var(--border); box-shadow: var(--shadow-card);
+        display: flex; gap: 10px; align-items: flex-start;
+    }
+    .card-check {
+        width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border);
+        flex-shrink: 0; margin-top: 2px; cursor: pointer; display: grid; place-items: center;
+    }
+    .card.done .card-check { background: var(--success); border-color: var(--success); }
+    .card.skip .card-check { border-color: var(--skip); background: var(--bg-body); }
+    
+    .card-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+    .card-txt { 
+        font-size: 0.95rem; font-weight: 600; color: var(--text-main); 
+        white-space: pre-wrap; word-break: break-word; line-height: 1.4;
+    }
+    .card.done .card-txt { text-decoration: line-through; opacity: 0.5; }
+    .card-footer { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; font-weight: 700; color: var(--text-sub); }
+    .badge-time { display: flex; align-items: center; gap: 3px; background: var(--bg-body); padding: 2px 6px; border-radius: 4px; }
+    .badge-timer { color: var(--primary); }
+
+    /* --- COMPACT & PRETTY PICKERS --- */
+    .picker-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9999 !important;
+        display: none; align-items: center; justify-content: center; backdrop-filter: blur(3px);
+    }
+    .picker-overlay.open { display: flex; animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    @keyframes popIn { from { opacity:0; transform:scale(0.9); } to { opacity:1; transform:scale(1); } }
+    
+    .tp-card {
+        background: #fff; width: 260px; padding: 15px; border-radius: 18px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+    }
+    .tp-header { text-align: center; font-weight: 800; color: var(--text-main); margin-bottom: 10px; font-size: 1rem; }
+    
+    .tp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; height: 160px; }
+    .tp-col { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
+    .tp-col::-webkit-scrollbar { width: 3px; }
+    .tp-col::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+    
+    .tp-btn {
+        padding: 6px; border-radius: 6px; border: 1px solid transparent; background: #f8fafc;
+        font-weight: 600; font-size: 0.85rem; cursor: pointer; text-align: center; transition: 0.1s;
+    }
+    .tp-btn.active { background: var(--primary); color: white; box-shadow: 0 2px 5px rgba(99, 102, 241, 0.3); }
+    
+    .tp-actions { margin-top: 12px; display: flex; gap: 8px; }
+    .tp-act-btn { flex: 1; padding: 10px; border-radius: 8px; border: none; font-weight: 700; cursor: pointer; font-size: 0.85rem; }
+    .tp-save { background: var(--primary); color: white; }
+    .tp-close { background: #e2e8f0; color: var(--text-main); }
+
+    /* --- CUSTOM DELETE CONFIRMATION --- */
+    .confirm-card {
+        background: #fff; width: 240px; padding: 20px; border-radius: 16px;
+        text-align: center; box-shadow: 0 15px 40px rgba(0,0,0,0.25);
+    }
+    .conf-title { font-size: 1rem; font-weight: 700; color: var(--text-main); margin-bottom: 5px; }
+    .conf-sub { font-size: 0.8rem; color: var(--text-sub); margin-bottom: 15px; }
+    .conf-btns { display: flex; gap: 10px; }
+    .conf-btn { 
+        flex: 1; padding: 10px; border-radius: 8px; border: none; 
+        font-weight: 700; cursor: pointer; font-size: 0.9rem; 
+    }
+    .conf-yes { background: var(--danger); color: white; }
+    .conf-no { background: #f1f5f9; color: var(--text-main); }
+
+
+    /* --- EDITOR & DOCS --- */
+    .edit-row { 
+        background: #fff; border: 1px solid var(--border); padding: 10px; 
+        border-radius: 10px; margin-bottom: 10px; display:flex; gap:8px; align-items:center;
+    }
+    .btn-time-trig {
+        background: var(--bg-body); border: 1px solid var(--border); padding: 8px 12px;
+        border-radius: 8px; font-weight: 700; color: var(--primary); cursor: pointer;
+        min-width: 80px; text-align: center;
+    }
+    .inp-flat { 
+        border: 1px solid #eee; background: var(--bg-body); padding: 8px; 
+        border-radius: 6px; flex: 1; font-family: inherit; font-size: 0.95rem;
+    }
+
+    /* --- QUILL FIXED STYLES (KEYBOARD + TOOLBAR) --- */
+    .editor-container { 
+        background: #fff; 
+        border: 1px solid var(--border); 
+        border-radius: 10px; 
+        overflow: hidden; 
+        display: flex; 
+        flex-direction: column; 
+        height: 350px; 
+        position: relative;
+    }
+
+    /* Toolbar Specific Fixes */
+
+
+
+/* Toolbar Specific Fixes */
+.ql-toolbar.ql-snow {
+    border: none !important; 
+    border-bottom: 1px solid var(--border) !important;
+    background: var(--bg-body); 
+    flex-shrink: 0; 
+    width: 100%;    
+    z-index: 5;    
+    display: flex !important;   /* Block এর বদলে Flex */
+    flex-wrap: wrap;            /* বাটনগুলো নিচে নিচে নামবে */
+    padding: 5px !important;
+    gap: 5px;                   /* বাটনের মাঝখানে ফাঁকা */
+}
+
+/* ছোট স্ক্রিনে বাটনগুলো সুন্দর দেখানোর জন্য */
+.ql-snow .ql-picker-label { padding-left: 4px; }
+
+
+
+
+
+    /* Editor Area Fixes */
+    .ql-container.ql-snow {
+        border: none !important; 
+        font-family: var(--font-stack) !important; 
+        font-size: 1rem; 
+        flex: 1;        
+        overflow-y: hidden; 
+    }
+    
+    .ql-editor { 
+        padding: 15px; 
+        color: var(--text-main); 
+        line-height: 1.6;
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    /* Fix Icons Visibility */
+    .ql-snow .ql-stroke { stroke: var(--text-main) !important; }
+    .ql-snow .ql-fill { fill: var(--text-main) !important; }
+    .ql-snow .ql-picker { color: var(--text-main) !important; }
+    
+    .ql-editor img { max-width: 100%; height: auto; border-radius: 6px; }
+
+
+    /* Stickers */
+    .sticker-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .sticker { 
+        padding: 15px; border-radius: 10px; font-size: 0.9rem; 
+        box-shadow: var(--shadow-card); position: relative; word-break: break-word; 
+        max-height: 200px; overflow-y: auto; background: #fff;
+    }
+    .sticker img { max-width: 100%; height: auto; border-radius: 4px; display: block; margin: 5px 0; }
+    .sticker::-webkit-scrollbar { width: 4px; }
+    .sticker::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 4px; }
+
+    .add-fab {
+        position: absolute; bottom: 20px; right: 20px; width: 48px; height: 48px;
+        background: var(--text-main); color: white; border-radius: 50%; border: none;
+        font-size: 1.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.2); cursor: pointer; z-index: 10;
+    }
+
+
+
+
+/* --- EDITOR FULL PAGE FIX --- */
+.sheet.full-mode .sh-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.sheet.full-mode .editor-container {
+    flex: 1; /* ফুল স্ক্রিনে এডিটর পুরো জায়গা নেবে */
+    height: auto !important;
+    min-height: 0;
+}
+
+/* Sticker এর উপর বাটনগুলোর স্টাইল */
+.sticker-actions {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: flex;
+    gap: 5px;
+    background: rgba(255,255,255,0.9);
+    padding: 3px;
+    border-radius: 6px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.st-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 4px;
+    color: var(--text-main);
+}
+.st-btn:hover { background: #f1f5f9; }
+.st-btn.del { color: var(--danger); }
+
+
+
+
+
+/* --- MODE 3: TIMELINE STRIP --- */
+.timeline-strip {
+    display: none; /* ডিফল্টভাবে লুকানো */
+    overflow-x: auto;
+    white-space: nowrap;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
+    gap: 8px;
+    flex-shrink: 0;
+    scrollbar-width: none; /* Firefox hide scroll */
+}
+.timeline-strip::-webkit-scrollbar { display: none; } /* Chrome hide scroll */
+
+.tl-item {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: var(--bg-body);
+    color: var(--text-sub);
+    cursor: pointer;
+    min-width: 50px;
+    border: 1px solid transparent;
+    transition: 0.2s;
+}
+.tl-item.active {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 4px 10px -2px rgba(99, 102, 241, 0.4);
+}
+.tl-day { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+.tl-date { font-size: 1.1rem; font-weight: 800; }
+.tl-dot { width: 4px; height: 4px; background: currentColor; border-radius: 50%; margin-top: 3px; opacity: 0; }
+.tl-item.has-data .tl-dot { opacity: 0.8; }
+
+
+/* --- MODE 3: SPLIT VIEW LAYOUT OVERRIDES --- */
+/* --- MODE 3: SPLIT VIEW LAYOUT --- */
+/* --- MODE 3: SPLIT VIEW FIX (NO GAP) --- */
+/* ৩য় মোডে মেইন কন্টেইনারের ফ্লেক্স বন্ধ করা */
+body.mode-split main {
+    flex: none !important; 
+    height: auto !important;
+}
+
+/* ৩য় মোডে প্যানেল (Overlay) পুরো নিচের জায়গা দখল করবে */
+body.mode-split .overlay {
+    position: relative !important;
+    inset: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    display: flex !important;
+    flex: 1; /* এটি এখন বডির বাকি সবটুকু জায়গা নেবে */
+    z-index: 1;
+}
+
+body.mode-split .sheet {
+    position: relative !important;
+    transform: none !important; 
+    height: 100% !important;
+    width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+}
+
+/* ৩য় মোডে অতিরিক্ত প্যাডিং কমানো */
+body.mode-split .sh-body {
+    padding: 10px 16px 20px 16px !important;
+}
+
+/* টাইমলাইন স্ট্রিপ ফিক্স */
+.timeline-strip {
+    display: none;
+    overflow-x: auto;
+    background: #fff;
+    padding: 10px;
+    gap: 8px;
+    height: 85px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+}
+
+/* ইন্ডিকেটর স্টাইল (টাইমলাইনের তারিখের নিচে) */
+.tl-indicators {
+    display: flex;
+    gap: 2px;
+    margin-top: 4px;
+    height: 12px;
+}
+.tl-ind {
+    font-size: 0.55rem;
+    font-weight: 800;
+    padding: 0 3px;
+    border-radius: 3px;
+}
+.tl-p { background: #e0e7ff; color: #4f46e5; }
+.tl-t { background: #dcfce7; color: #15803d; }
+.tl-n { background: #fef3c7; color: #b45309; }
+
+
+/* --- MODE 3: INDEPENDENT SCROLLING FIX --- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* --- MODE 3: FULL SCROLL FIX --- */
+body.mode-split {
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+body.mode-split main {
+    flex-shrink: 0;
+    height: auto !important;
+}
+
+body.mode-split .overlay {
+    position: relative !important;
+    flex: 1; 
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden; /* বাইরের অংশ যাতে স্ক্রল না হয় */
+    min-height: 0;
+}
+
+body.mode-split .sheet {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100% !important;
+    transform: none !important;
+    border-radius: 0;
+    background: var(--surface);
+}
+
+body.mode-split .sh-body {
+    flex: 1;
+    overflow-y: auto !important;
+    /* নিচের বাটনের জন্য পর্যাপ্ত জায়গা (১০০-১২০ পিক্সেল) */
+    padding: 10px 16px 120px 16px !important; 
+    -webkit-overflow-scrolling: touch;
+}
+
+/* FAB বাটনটি ৩য় মোডে যাতে প্যানেলের ভেতরেই থাকে */
+body.mode-split .add-fab {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 100;
+}
+
+/* ৩য় মোডে অপ্রয়োজনীয় প্যাডিং বা মার্জিন ফিক্স */
+body.mode-split .filter-bar {
+    padding-bottom: 10px;
+}
+
+
+/* ৩য় মোডে প্যানেলের ক্লোজ এবং ফুল বাটন লুকানো */
+body.mode-split .sh-head div:has(button) { 
+    display: none !important; 
+}
+
+/* যদি উপরের কোড কাজ না করে (ব্রাউজার সাপোর্টের কারণে), তবে এটি ব্যবহার করুন: */
+body.mode-split .sh-head .nav-btn {
+    display: none !important;
+}
+
+/* টাইমলাইন আইটেম বর্ডার ফিক্স */
+.tl-item {
+    border: 1px solid transparent;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* --- MASTER PANEL STYLES --- */
+.master-btn {
+    position: fixed;
+    bottom: 20px;
+    left: 20px; /* বাম পাশে রাখলাম কারণ ডানে FAB আছে */
+    width: 48px;
+    height: 48px;
+    background: #1e293b;
+    color: white;
+    border-radius: 50%;
+    border: none;
+    font-size: 1.4rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    cursor: pointer;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+}
+
+.master-panel {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-body);
+    z-index: 2000;
+    display: none; /* ডিফল্ট লুকানো */
+    flex-direction: column;
+    animation: slideUp 0.3s ease-out;
+}
+
+.master-panel.active { display: flex; }
+
+@keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+.mp-head {
+    padding: 15px;
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mp-title { font-weight: 800; font-size: 1.1rem; color: var(--primary); }
+
+.mp-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+}
+
+.group-label {
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--text-sub);
+    text-transform: uppercase;
+    margin: 20px 0 10px 5px;
+    letter-spacing: 1px;
+}
+
+/* জেনারেল আইটেম সেকশন স্পেশাল কালার */
+.general-item {
+    border-left: 4px solid #f59e0b !important;
+}
+
+.date-tag {
+    font-size: 0.65rem;
+    background: #e2e8f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: auto;
+}
+
+
+
+/* FAB ডিজাইন ফিক্স */
+.add-fab {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    line-height: 0;
+    padding-bottom: 4px; /* প্লাস সাইন সেন্টারিং ফিক্স */
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.add-fab:active { transform: scale(0.9) rotate(90deg); }
+
+/* টাস্ক কার্ড ইমপ্রুভমেন্ট */
+.card.done { border-left: 4px solid var(--success) !important; background: #f0fdf4; }
+.card.skip { border-left: 4px solid var(--skip) !important; opacity: 0.7; background: #f8fafc; }
+
+
+
+
+/* Master Panel Improvements */
+.mp-view-toggle {
+    font-size: 0.7rem; font-weight: 800; background: var(--bg-body);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer;
+}
+.meta-info { font-size: 0.55rem; color: var(--text-sub); margin-top: 4px; display: block; }
+.card.pinned-item { border-left: 4px solid #f59e0b !important; background: #fffbeb; }
+.sticker.pinned-item { border: 2px solid #f59e0b; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2); }
+
+/* Doc Card View */
+.doc-card-mode { display: flex; flex-direction: column; gap: 8px; }
+.doc-card-mode .sticker { width: 100% !important; max-height: none !important; }
+
+/* Timer Badge */
+.live-timer {
+    font-size: 0.6rem; font-weight: 800; color: #fff;
+    background: var(--primary); padding: 2px 6px; border-radius: 4px; margin-left: 6px;
+}
+.live-timer.late { background: var(--danger); }	
+
+
+
+
+
+
+/* Pinned Section Style */
+.pinned-header {
+    background: linear-gradient(90deg, #fffbeb, #ffffff);
+    padding: 10px; border-radius: 12px; border: 1px dashed #f59e0b;
+    margin-bottom: 20px;
+}
+.pin-label { 
+    color: #f59e0b; font-weight: 800; font-size: 0.75rem; 
+    display: flex; align-items: center; gap: 5px; margin-bottom: 10px;
+}
+
+/* Master Task Filters Fix */
+#masterTaskFilters {
+    display: flex; gap: 8px; padding: 10px 15px; 
+    background: #fff; border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+}
+
+/* FAB Centering Fix */
+.add-fab { display: flex !important; align-items: center; justify-content: center; }
+
+
+
+
+
+
+
+
+
+
+/* Search Highlight */
+mark { background: #fde047; color: #000; padding: 0 2px; border-radius: 2px; }
+
+/* Meta & Timestamps */
+.meta-row { 
+    display: flex; flex-direction: column; gap: 2px; 
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;
+}
+.meta-item { font-size: 0.55rem; color: #94a3b8; font-weight: 600; }
+
+/* Doc Card Style (Sticker বাদ দিয়ে Card Style) */
+.doc-list-card {
+    background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    padding: 15px; margin-bottom: 10px; position: relative;
+    box-shadow: var(--shadow-card); transition: 0.3s;
+}
+.doc-list-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-float); }
+
+/* Live Timer UI */
+.acc-timer {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.65rem; font-weight: 800; padding: 2px 8px;
+    border-radius: 20px; color: #fff;
+}
+.timer-active { background: var(--primary); }
+.timer-late { background: var(--danger); animation: pulse 2s infinite; }
+
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
+/* Search Bar UI */
+.mp-search-box {
+    padding: 10px 15px; background: #fff; border-bottom: 1px solid var(--border);
+}
+.mp-search-input {
+    width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+    font-size: 0.85rem; font-family: inherit; background: var(--bg-body);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Pinned & Search Highlights */
+mark { background: #fef08a; color: #1e293b; padding: 0 2px; border-radius: 2px; }
+.pinned-header { background: #fffbeb; border: 1px dashed #f59e0b; border-radius: 12px; padding: 10px; margin-bottom: 20px; }
+
+/* Doc View Layouts */
+.sticker-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.doc-card-mode { display: flex; flex-direction: column; gap: 10px; }
+
+/* Timer & Meta */
+.acc-timer { font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 10px; color: #fff; }
+.timer-active { background: var(--primary); }
+.timer-late { background: var(--danger); animation: pulse 2s infinite; }
+.meta-row { font-size: 0.55rem; color: var(--text-sub); margin-top: 8px; border-top: 1px solid #eee; padding-top: 4px; }
+
+/* Search & Toggle Bar */
+.mp-controls { padding: 10px 15px; background: #fff; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+.mp-search-input { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-body); font-size: 0.85rem; }
+.view-toggle-btn { font-size: 0.7rem; font-weight: 800; background: var(--primary-soft); color: var(--primary); border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; align-self: flex-end; }
+
+
+
+
+
+
+
+
+
+
+
+/* --- PROJECT STRIP (3D CARDS) --- */
+.project-section {
+    padding: 15px 10px;
+    background: #f8fafc;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0; /* ক্যালেন্ডার যাতে একে চ্যাপ্টা না করে */
+}
+
+.section-title {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--text-sub);
+    text-transform: uppercase;
+    padding-left: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.project-scroll {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 10px 5px 20px 5px; /* Shadow cutting fix */
+    scrollbar-width: none;
+}
+.project-scroll::-webkit-scrollbar { display: none; }
+
+/* 3D Project Card */
+.proj-3d-card {
+    min-width: 140px;
+    height: 100px;
+    background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+    border-radius: 16px;
+    padding: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid #fff;
+    
+    /* 3D Effect Shadows */
+    box-shadow: 
+        5px 5px 10px rgba(163, 177, 198, 0.4), 
+        -5px -5px 10px rgba(255, 255, 255, 0.8);
+}
+
+.proj-3d-card:active {
+    transform: scale(0.96);
+    box-shadow: 
+        inset 3px 3px 6px rgba(163, 177, 198, 0.4), 
+        inset -3px -3px 6px rgba(255, 255, 255, 0.8);
+}
+
+.p-card-title {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--text-main);
+    margin-bottom: 4px;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.p-card-date {
+    font-size: 0.6rem;
+    color: var(--text-sub);
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+}
+
+.p-card-count {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    background: var(--primary-soft);
+    color: var(--primary);
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+/* --- PROJECT FULL PANEL (Overlay) --- */
+.project-panel {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-body);
+    z-index: 2500; /* Master panel এর উপরে */
+    display: none;
+    flex-direction: column;
+    animation: slideUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.project-panel.active { display: flex; }
+
+.pp-head {
+    background: #fff;
+    padding: 15px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.pp-title-inp {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-main);
+    border: none;
+    background: transparent;
+    width: 70%;
+}
+
+
+
+
+
+
+
+
+
+
+
+/* --- PROJECT PANEL IMPROVEMENTS --- */
+.proj-desc-inp {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px dashed transparent;
+    font-size: 0.75rem; /* ছোট ফন্ট */
+    color: var(--text-sub);
+    margin-top: 4px;
+    padding: 2px 0;
+    font-family: inherit;
+    transition: 0.2s;
+}
+.proj-desc-inp:focus {
+    border-bottom-color: var(--primary);
+    color: var(--text-main);
+}
+.proj-filter-bar {
+    display: flex; gap: 8px; padding: 10px 16px; 
+    background: #fff; border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+}
+
+
+
+
+
+
+
+/* --- ADVANCED PROJECT DOC STYLES --- */
+.proj-controls {
+    padding: 10px 16px;
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.proj-search-inp {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-body);
+    font-size: 0.85rem;
+    font-family: inherit;
+}
+
+.proj-view-btn {
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--primary);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+}
+
+/* List View Style for Project Docs */
+.proj-doc-list .sticker {
+    width: 100% !important;
+    max-height: none !important;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 10px;
+}
+
+/* Editor Fix inside Project Panel */
+.proj-editor-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 140px); /* Full height fix */
+    background: #fff;
+}
+.proj-editor-wrapper .ql-container {
+    flex: 1;
+    overflow-y: auto;
+}
+
+
+
+/* Editor Scrollbar Fix inside Cards */
+.ql-editor::-webkit-scrollbar { 
+    width: 4px; 
+}
+.ql-editor::-webkit-scrollbar-thumb { 
+    background: #cbd5e1; 
+    border-radius: 4px; 
+}
+
+
+
+
+
+
+
+
+/* --- PROJECT SECTION MOVEMENT FIX --- */
+
+/* Mode 3 তে প্রজেক্ট সেকশন স্টাইল */
+body.mode-split .project-section {
+    order: 10; /* সবার শেষে দেখাবে */
+    background: #fff; /* প্যানেলের সাথে মিল রেখে সাদা */
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 10px rgba(0,0,0,0.03); /* হালকা শ্যাডো যাতে আলাদা বোঝা যায় */
+    z-index: 15;
+    padding-bottom: 20px; /* FAB বাটনের জন্য জায়গা */
+}
+
+/* Mode 3 তে FAB বাটনটি একটু উপরে উঠানো, যাতে প্রজেক্টের উপর না পড়ে */
+body.mode-split .add-fab {
+    bottom: 130px !important; /* প্রজেক্ট সেকশনের উপরে থাকবে */
+}
+
+/* Mode 3 তে শিটের বডি এবং প্রজেক্ট সেকশন ম্যানেজমেন্ট */
+body.mode-split .sheet {
+    display: flex;
+    flex-direction: column;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* --- PROJECT TOGGLE STYLES --- */
+
+/* টগল আইকন স্টাইল */
+.proj-toggle-icon {
+    width: 20px; 
+    height: 20px; 
+    transition: transform 0.3s ease;
+    color: var(--text-sub);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+.proj-toggle-icon:hover {
+    background: rgba(0,0,0,0.05);
+    color: var(--text-main);
+}
+
+/* যখন সেকশন বন্ধ থাকবে তখন আইকন ঘুরবে */
+.project-section.collapsed .proj-toggle-icon {
+    transform: rotate(-90deg);
+}
+
+/* প্রজেক্ট লিস্টের অ্যানিমেশন */
+
+
+/* প্রজেক্ট লিস্টের অ্যানিমেশন */
+.project-scroll {
+    max-height: 150px; 
+    opacity: 1;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: hidden; /* শুধুমাত্র লম্বালম্বি (vertical) হাইড করবে */
+    overflow-x: auto;   /* ডানে-বামে (horizontal) স্ক্রল চালু রাখবে */
+}
+
+
+/* যখন ক্লাস 'collapsed' থাকবে তখন হাইট ০ হবে */
+.project-section.collapsed .project-scroll {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin: 0;
+}
+
+
+
+
+
+
+/* --- AUTO FULL SCREEN EDITOR --- */
+body.editing-active .sheet {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background: #ffffff !important;
+    z-index: 10000 !important; /* সবার উপরে */
+    border-radius: 0 !important;
+    transform: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 0 !important;
+}
+
+/* এডিটিং এর সময় পেছনের জিনিসপত্র লুকানো */
+body.editing-active header,
+body.editing-active .timeline-strip,
+body.editing-active .project-section,
+body.editing-active .master-btn,
+body.editing-active .add-fab,
+body.editing-active .cal-grid,
+body.editing-active .nav-group {
+    display: none !important;
+}
+
+/* এডিটর কন্টেইনার ফিক্স */
+body.editing-active .sheet .sh-body {
+    padding: 0 !important;
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+body.editing-active .editor-container {
+    border: none !important;
+    border-radius: 0 !important;
+}
+
+
+
+
+
+
+
+/* --- ক্যালেন্ডারের পিনগুলো যাতে কেটে না গিয়ে পুরোটা দেখায় --- */
+/*
+.pin-chip {
+    font-size: 0.6rem; font-weight: 600; padding: 2px 4px;
+    border-radius: 3px; background: var(--primary-soft); color: var(--primary);
+    white-space: normal; /* আগে nowrap ছিল */
+    word-break: break-word;
+    line-height: 1.3;
+    border-left: 2px solid var(--primary); display: block;
+}
+*/
+
+
+/* --- ক্যালেন্ডারের পিনগুলোর স্টাইল পরিবর্তন --- */
+.pin-chip {
+    font-size: 0.6rem; 
+    font-weight: 600; 
+    padding: 2px 4px;
+    border-radius: 3px; 
+    background: var(--primary-soft); 
+    color: var(--primary);
+    
+    /* নিচের ৩টি লাইন পরিবর্তন করা হয়েছে */
+    white-space: nowrap;       /* টেক্সট র‍্যাপ হবে না, এক লাইনে থাকবে */
+    overflow: hidden;          /* অতিরিক্ত অংশ লুকিয়ে ফেলবে */
+    text-overflow: ellipsis;   /* বড় টেক্সট হলে শেষে তিনটি ডট (...) দেখাবে */
+    
+    line-height: 1.3;
+    border-left: 2px solid var(--primary); 
+    display: block;
+}
+
+
+
+
+
+/* --- ইনপুট ফিল্ড অটো-রিসাইজ ও র‍্যাপ করার জন্য --- */
+.inp-flat { 
+    border: 1px solid #eee; background: var(--bg-body); padding: 8px; 
+    border-radius: 6px; flex: 1; font-family: inherit; font-size: 0.95rem;
+    resize: none; 
+    overflow: hidden; 
+    field-sizing: content; /* আধুনিক ব্রাউজারে অটো হাইট */
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.proj-desc-inp {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px dashed transparent;
+    font-size: 0.75rem; 
+    color: var(--text-sub);
+    margin-top: 4px;
+    padding: 2px 0;
+    font-family: inherit;
+    transition: 0.2s;
+    resize: none; 
+    overflow: hidden; 
+    field-sizing: content; 
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+
+
+</style>
+</head>
+<body>
+
+<svg style="display:none;">
+    <symbol id="icon-layer" viewBox="0 0 24 24"><path d="M11.99 18.54l-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27-7.38 5.74zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27L12 16z"/></symbol>
+    <symbol id="icon-full" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="white"/></symbol>
+    <symbol id="icon-cal" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z" fill="currentColor"/></symbol>
+    <!-- Edit Icon যোগ করুন -->
+    <symbol id="icon-edit" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></symbol>
+
+</svg>
+
+<header>
+    <div class="header-left">
+        <button class="view-toggle" id="viewTog" onclick="toggleViewMode()"><svg style="width:18px;height:18px;fill:currentColor"><use href="#icon-layer"/></svg></button>
+        <div class="clock-widget centered" id="smartClock" onclick="goToToday()">
+            <div class="cw-time" id="headTime">--:--</div>
+            <div class="cw-date" id="headDate">-- --</div>
+        </div>
+    </div>
+
+    <!-- Center Title (Now safer) -->
+    <div class="center-title" id="centerTitle"></div>
+
+    <div class="nav-group">
+        <button class="nav-btn" onclick="moveMonth(-1)">‹</button>
+        <button class="nav-btn picker-btn" onclick="openDatePicker()">
+            <svg style="width:20px;height:20px"><use href="#icon-cal"/></svg>
+        </button>
+        <button class="nav-btn" onclick="moveMonth(1)">›</button>
+    </div>
+</header>
+
+
+<main>
+    <!-- নতুন টাইমলাইন কন্টেইনার -->
+    <div class="timeline-strip" id="timelineBox"></div>
+
+    <!-- পুরাতন ক্যালেন্ডার গ্রিড -->
+    <div class="cal-grid" id="grid"></div>
+
+
+
+<!-- Project Section inside Main -->
+<!-- Project Section inside Main -->
+<div class="project-section" id="projSection">
+    <div class="section-title" onclick="toggleProjects()" style="cursor:pointer;">
+        <div style="display:flex; align-items:center; gap:6px;">
+            <!-- টগল আইকন -->
+            <div class="proj-toggle-icon">
+                <svg style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round">
+                    <path d="M6 9l6 6 6-6"/>
+                </svg>
+            </div>
+            <span>My Projects</span>
+        </div>
+        
+        <!-- NEW বাটন (এটাতে ক্লিক করলে টগল হবে না, ইভেন্ট বাবলিং বন্ধ করা হয়েছে) -->
+        <button onclick="event.stopPropagation(); createNewProject()" 
+                style="background:none; border:none; color:var(--primary); font-weight:800; cursor:pointer; padding: 4px 8px;">
+            + NEW
+        </button>
+    </div>
+
+    <div class="project-scroll" id="projectList">
+        <!-- JS দিয়ে কার্ড এখানে আসবে -->
+    </div>
+</div>
+
+
+
+
+
+</main>
+
+
+
+<!-- TIME PICKER -->
+<div class="picker-overlay" id="timePicker">
+    <div class="tp-card">
+        <div class="tp-header">Select Time</div>
+        <div class="tp-grid">
+            <div class="tp-col" id="tpHours"></div>
+            <div class="tp-col" id="tpMins"></div>
+        </div>
+        <div class="tp-actions">
+            <button class="tp-act-btn tp-close" onclick="closeTimePicker()">Cancel</button>
+            <button class="tp-act-btn tp-save" onclick="saveTimePicker()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- DATE PICKER -->
+<div class="picker-overlay" id="datePicker">
+    <div class="tp-card">
+        <div class="tp-header">Jump to Date</div>
+        <div class="tp-grid">
+            <div class="tp-col" id="dpMonths"></div>
+            <div class="tp-col" id="dpYears"></div>
+        </div>
+        <div class="tp-actions">
+            <button class="tp-act-btn tp-close" onclick="closeDatePicker()">Cancel</button>
+            <button class="tp-act-btn tp-save" onclick="saveDatePicker()">Go</button>
+        </div>
+    </div>
+</div>
+
+<!-- CUSTOM CONFIRM OVERLAY -->
+<div class="picker-overlay" id="confirmOverlay">
+    <div class="confirm-card">
+        <div class="conf-title">Delete Item?</div>
+        <div class="conf-sub">This action cannot be undone.</div>
+        <div class="conf-btns">
+            <button class="conf-btn conf-no" onclick="closeConfirm()">No</button>
+            <button class="conf-btn conf-yes" onclick="confirmYes()">Yes</button>
+        </div>
+    </div>
+</div>
+
+<div class="overlay" id="overlay">
+    <div class="sheet" id="sheetCard">
+        <div class="sh-head">
+            <div class="color-picker">
+                <div class="cp-dot" style="background:#ffffff" onclick="setBoxColor('#ffffff')"></div>
+                <div class="cp-dot" style="background:#fefce8" onclick="setBoxColor('#fefce8')"></div>
+                <div class="cp-dot" style="background:#f0fdf4" onclick="setBoxColor('#f0fdf4')"></div>
+                <div class="cp-dot" style="background:#eff6ff" onclick="setBoxColor('#eff6ff')"></div>
+                <div class="cp-dot" style="background:#fdf2f8" onclick="setBoxColor('#fdf2f8')"></div>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button class="nav-btn" onclick="toggleFullSheet()"><svg style="width:16px;height:16px;fill:#555"><use href="#icon-full"/></svg></button>
+                <button class="nav-btn" onclick="closeSheet()"><svg style="width:16px;height:16px;fill:#555"><use href="#icon-close"/></svg></button>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="setTab('pin')">Pins</button>
+            <button class="tab" onclick="setTab('task')">Tasks</button>
+            <button class="tab" onclick="setTab('note')">Docs</button>
+        </div>
+
+        <!-- Task Filters -->
+        <div class="filter-bar" id="taskFilters" style="display:none;">
+            <div class="f-chip active" onclick="setTaskFilter('all', this)">All</div>
+            <div class="f-chip" onclick="setTaskFilter('pending', this)">Active</div>
+            <div class="f-chip" onclick="setTaskFilter('done', this)">Done</div>
+            <div class="f-chip" onclick="setTaskFilter('skip', this)">Skip</div>
+        </div>
+
+        <div class="sh-body" id="sheetBody"></div>
+
+        <button class="add-fab" onclick="toggleEdit()" id="fabBtn">+</button>
+    </div>
+</div>
+
+
+<!-- Master Button -->
+<button class="master-btn" onclick="openMasterPanel()" title="Master View">
+    <svg style="width:24px;height:24px;fill:currentColor"><use href="#icon-layer"/></svg>
+</button>
+
+<!-- Master Full Page Panel -->
+
+
+
+
+
+
+<!-- Master Full Page Panel -->
+<div class="master-panel" id="masterPanel">
+    <div class="mp-head">
+        <div class="mp-title">Master Planner</div>
+        <button class="nav-btn" onclick="closeMasterPanel()"><svg style="width:20px;height:20px;fill:#555"><use href="#icon-close"/></svg></button>
+    </div>
+
+    <div class="tabs" style="background:#fff; border-bottom:none;">
+        <button class="tab active" id="mTabPin" onclick="setMasterTab('pin', this)">All Pins</button>
+        <button class="tab" id="mTabTask" onclick="setMasterTab('task', this)">All Tasks</button>
+        <button class="tab" id="mTabNote" onclick="setMasterTab('note', this)">All Docs</button>
+    </div>
+
+    <!-- মাস্টার প্যানেলের জন্য আলাদা ফিল্টার বার -->
+    <div class="filter-bar" id="masterTaskFilters" style="display:none; background:#fff; padding: 5px 15px 15px 15px;">
+        <div class="f-chip active" onclick="setMasterTaskFilter('all', this)">All</div>
+        <div class="f-chip" onclick="setMasterTaskFilter('pending', this)">Active</div>
+        <div class="f-chip" onclick="setMasterTaskFilter('done', this)">Done</div>
+        <div class="f-chip" onclick="setMasterTaskFilter('skip', this)">Skipped</div>
+    </div>
+
+    <div class="mp-content" id="masterContent"></div>
+
+    <button class="add-fab" onclick="addGeneralItem()" style="bottom: 30px; right: 30px;">+</button>
+</div>
+
+
+
+
+
+
+
+
+<!-- PROJECT FULL PANEL -->
+<!-- PROJECT FULL PANEL (UPDATED) -->
+<div class="project-panel" id="projectPanel">
+    <div class="pp-head">
+        <input type="text" id="ppTitle" class="pp-title-inp" onchange="updateProjectTitle(this.value)" placeholder="Project Name">
+        <div style="display:flex; gap:10px;">
+            <button class="nav-btn" onclick="deleteCurrentProject()" style="color:var(--danger);"><svg style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
+            <button class="nav-btn" onclick="closeProjectPanel()"><svg style="width:20px;height:20px;fill:#555"><use href="#icon-close"/></svg></button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" style="background:#fff; border-bottom:none;">
+        <button class="tab active" id="ppTabTask" onclick="setProjectTab('task')">Tasks</button>
+        <button class="tab" id="ppTabDoc" onclick="setProjectTab('doc')">Docs & Files</button>
+    </div>
+
+    <!-- Project Filters (Only Visible for Tasks) -->
+    <div class="proj-filter-bar" id="projFilters">
+        <div class="f-chip active" onclick="setProjTaskFilter('all', this)">All</div>
+        <div class="f-chip" onclick="setProjTaskFilter('pending', this)">Active</div>
+        <div class="f-chip" onclick="setProjTaskFilter('done', this)">Done</div>
+        <div class="f-chip" onclick="setProjTaskFilter('skip', this)">Skip</div>
+    </div>
+
+    <!-- Content Area -->
+    <div class="sh-body" id="projectBody" style="background:var(--bg-body); padding-bottom: 100px;"></div>
+
+    <!-- FAB for Project -->
+    <button class="add-fab" onclick="addProjectItem()" id="projFab">+</button>
+</div>
+
+
+
+
+
+
+<!-- QUILL JS -->
+<script src="planner/quill.js"></script>
+
+<script>
+    
+
+
+window.Quill = Quill;
+
+
+
+let db = {}; // ডাটাবেস লোড হওয়ার আগ পর্যন্ত খালি থাকবে
+let idb; // IndexedDB ইনস্ট্যান্স
+const DB_NAME = 'ProPlannerDB';
+let viewDate = new Date();
+
+    let selKey = null;
+    let curTab = 'pin';
+    let taskFilter = 'all';
+    let editingNoteIdx = null; // কোন নোট এডিট হচ্ছে তা মনে রাখার জন্য
+    let isEdit = false;
+let viewMode = parseInt(localStorage.getItem('viewMode') || 0); 
+// 0 = Normal, 1 = Compact, 2 = Split/Timeline
+
+    let quill = null;
+
+    // Picker States
+    let tpTarget = { type: null, index: null };
+    let tpSel = { h: '12', m: '00' };
+    let dpSel = { m: 0, y: 2025 };
+
+    // Delete State
+    let pendingDelete = { type: null, index: null };
+
+    function init() {
+	applyViewModeClass();
+        renderCal();
+        updateViewToggle();
+        buildTimePicker();
+        buildDatePicker();
+        setInterval(() => {
+            updateClock();
+            const today = new Date();
+            if(viewDate.getMonth() === today.getMonth() && viewDate.getFullYear() === today.getFullYear()) {
+                renderCal();
+            }
+            if(selKey && !isEdit) renderSheet(); 
+        }, 60000); 
+        updateClock();
+    }
+
+
+
+
+
+
+
+function autoResizeAll() {
+    setTimeout(() => {
+        document.querySelectorAll('textarea.inp-flat, textarea.proj-desc-inp').forEach(t => {
+            t.style.height = 'auto';
+            t.style.height = t.scrollHeight + 'px';
+        });
+    }, 50);
+}
+
+
+
+// --- PROJECT SECTION PLACEMENT LOGIC ---
+function placeProjectSection() {
+    const projSec = document.querySelector('.project-section'); // প্রজেক্ট সেকশন ধরা
+    const main = document.querySelector('main'); // মেইন ট্যাগ
+    const sheet = document.getElementById('sheetCard'); // শিট/প্যানেল
+
+    if (viewMode === 2) {
+        // Mode 3: প্রজেক্ট সেকশন শিট (Sheet) এর ভেতরে নিয়ে যাও
+        sheet.appendChild(projSec);
+    } else {
+        // Normal Mode: প্রজেক্ট সেকশন মেইন (Main) এর ভেতরে ফেরত আনো
+        main.appendChild(projSec);
+    }
+}
+
+function toggleViewMode() {
+    // 0 -> 1 -> 2 -> 0 এভাবে সাইকেল হবে
+    viewMode = (viewMode + 1) % 3;
+    localStorage.setItem('viewMode', viewMode);
+    
+    applyViewModeClass();
+    renderCal();
+    updateViewToggle();
+    
+    // --> নতুন লাইন যোগ করুন:
+    placeProjectSection(); 
+}
+
+
+
+function applyViewModeClass() {
+    if(viewMode === 2) {
+        document.body.classList.add('mode-split');
+        const todayKey = new Date().toISOString().split('T')[0];
+        if(!selKey) selKey = todayKey;
+        
+        // টাইমলাইন এবং প্যানেল সাথে সাথে দেখানোর জন্য
+        renderCal(); 
+        renderSheet(); 
+    } else {
+        document.body.classList.remove('mode-split');
+        // অন্য মোডে ফিরে গেলে প্যানেল লুকিয়ে ফেলা (পপআপ ছাড়া আসবে না)
+        document.getElementById('overlay').classList.remove('active');
+        renderCal();
+    }
+}
+
+function renderTimeline(y, m) {
+    const box = document.getElementById('timelineBox');
+    box.innerHTML = '';
+    const daysStr = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    
+    for(let i=1; i<=daysInMonth; i++) {
+        const dObj = new Date(y, m, i);
+        const key = dObj.toISOString().split('T')[0];
+        const dayData = db[key] || {pins:[], tasks:[], notes:[]};
+        
+        const pCount = dayData.pins.length;
+        const tCount = dayData.tasks.filter(t => t.status !== 'done').length;
+        const nCount = dayData.notes.length;
+
+        const el = document.createElement('div');
+        el.className = `tl-item ${key === selKey ? 'active' : ''}`;
+        
+        // ইন্ডিকেটর বক্স
+        let indicatorsHTML = `<div class="tl-indicators">`;
+        if(pCount > 0) indicatorsHTML += `<span class="tl-ind tl-p">${pCount}p</span>`;
+        if(tCount > 0) indicatorsHTML += `<span class="tl-ind tl-t">${tCount}t</span>`;
+        if(nCount > 0) indicatorsHTML += `<span class="tl-ind tl-n">${nCount}d</span>`;
+        indicatorsHTML += `</div>`;
+
+        el.innerHTML = `
+            <div class="tl-day">${daysStr[dObj.getDay()]}</div>
+            <div class="tl-date">${i}</div>
+            ${indicatorsHTML}
+        `;
+
+        el.onclick = () => {
+            selKey = key;
+            renderTimeline(y, m);
+            renderSheet(); // তারিখ বদলালে নিচের লিস্ট বদলাবে
+
+    const body = document.getElementById('sheetBody');
+    if(body) body.scrollTop = 0;
+
+
+        };
+        
+        box.appendChild(el);
+        if(key === selKey) {
+            setTimeout(() => el.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'}), 50);
+        }
+    }
+}
+// আপনার init ফাংশনটি এমন হওয়া উচিত
+
+function updateViewToggle() {
+    const btn = document.getElementById('viewTog');
+    
+    // আইকন সব মোডের জন্য এক (icon-layer)
+    btn.innerHTML = `<svg style="width:18px;height:18px;fill:currentColor"><use href="#icon-layer"/></svg>`;
+
+    // মোড অনুযায়ী রঙ পরিবর্তন
+    if (viewMode === 0) {
+        // ১. নরমাল মোড: ব্যাকগ্রাউন্ড ব্লু, আইকন হোয়াইট
+        btn.style.backgroundColor = "var(--primary)";
+        btn.style.color = "#ffffff";
+        btn.style.borderColor = "var(--primary)";
+    } else if (viewMode === 1) {
+        // ২. কম্প্যাক্ট মোড: ব্যাকগ্রাউন্ড হোয়াইট, আইকন ব্লু
+        btn.style.backgroundColor = "#ffffff";
+        btn.style.color = "#2563eb"; // নীল রঙ
+        btn.style.borderColor = "#2563eb";
+    } else if (viewMode === 2) {
+        // ৩. স্প্লিট মোড: ব্যাকগ্রাউন্ড হোয়াইট, আইকন ইয়োলো/গোল্ডেন
+        btn.style.backgroundColor = "#ffffff";
+        btn.style.color = "#f59e0b"; // হলুদ/কমলা রঙ
+        btn.style.borderColor = "#f59e0b";
+    }
+}
+
+
+    function updateClock() {
+        const n = new Date();
+        document.getElementById('headTime').innerText = n.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        document.getElementById('headDate').innerText = n.toLocaleDateString([], {month:'short', day:'numeric'});
+    }
+
+    // --- NAVIGATION ---
+    function updateHeaderState() {
+        const today = new Date();
+        const isCurrent = viewDate.getMonth() === today.getMonth() && viewDate.getFullYear() === today.getFullYear();
+        
+        const clock = document.getElementById('smartClock');
+        const title = document.getElementById('centerTitle');
+        
+        if(isCurrent) {
+            clock.className = 'clock-widget centered';
+            title.classList.remove('visible');
+        } else {
+            clock.className = 'clock-widget mini-left';
+            title.innerText = viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            title.classList.add('visible');
+        }
+    }
+
+    function goToToday() { viewDate = new Date(); renderCal(); }
+
+
+
+    function getRelTime(isoDate, timeStr) {
+        if(!timeStr) return null;
+        const target = new Date(`${isoDate}T${timeStr}`);
+        const now = new Date();
+        const diff = target - now;
+        const mins = Math.ceil(diff / 60000);
+        
+        if(diff < -60000) return { txt: "Late", class: "late" };
+        if(diff <= 60000 && diff > -60000) return { txt: "Now", class: "" };
+        if(mins < 60) return { txt: `in ${mins}m`, class: "" };
+        const h = Math.floor(mins/60);
+        const m = mins%60;
+        return { txt: `in ${h}h ${m>0?m+'m':''}`, class: "" };
+    }
+
+    // --- CALENDAR RENDER ---
+function renderCal() {
+    const y = viewDate.getFullYear(), m = viewDate.getMonth();
+    updateHeaderState(); 
+
+    const grid = document.getElementById('grid');
+    const timelineBox = document.getElementById('timelineBox');
+
+    // --- মোড অনুযায়ী গ্রিড এবং টাইমলাইন লুকানো বা দেখানো ---
+    if (viewMode === 2) {
+        grid.style.display = 'none';         // ক্যালেন্ডার বন্ধ
+        timelineBox.style.display = 'flex';  // তারিখের লাইন চালু
+        renderTimeline(y, m);               // তারিখের লাইন রেন্ডার
+        return; 
+    } else {
+        grid.style.display = 'grid';         // ক্যালেন্ডার চালু
+        timelineBox.style.display = 'none';  // তারিখের লাইন বন্ধ
+    }
+
+    // --- মোড ০ এবং ১ এর জন্য ক্যালেন্ডার রেন্ডারিং (আপনার আগের নির্ভুল কোড) ---
+    grid.innerHTML = '';
+    ['SUN','MON','TUE','WED','THU','FRI','SAT'].forEach(d => {
+        const h = document.createElement('div'); h.className='day-head'; h.innerText=d; grid.appendChild(h);
+    });
+
+    const firstDay = new Date(y, m, 1).getDay();
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    const todayKey = new Date().toISOString().split('T')[0];
+
+    for(let i=0; i<firstDay; i++) grid.appendChild(document.createElement('div'));
+
+    for(let i=1; i<=daysInMonth; i++) {
+        const dObj = new Date(y, m, i);
+        const key = dObj.toISOString().split('T')[0];
+        if(!db[key]) db[key] = {bg:'#ffffff', pins:[], tasks:[], notes:[]};
+        const d = db[key];
+        
+        const cell = document.createElement('div');
+        cell.className = 'day';
+        if(key === todayKey) cell.classList.add('today');
+        cell.style.background = d.bg !== '#ffffff' ? d.bg : '';
+        cell.onclick = () => openSheet(key, dObj);
+
+        let html = `<div class="date-num">${i}</div>`;
+        
+        if(viewMode === 1) { // Compact Mode
+            html += `<div class="indicator-row">`;
+            if(d.pins.length) html += `<div class="idx-pill idx-p">${d.pins.length}p</div>`;
+            const activeT = d.tasks.filter(t=>t.status!=='done'&&t.status!=='skip').length;
+            if(activeT) html += `<div class="idx-pill idx-t">${activeT}t</div>`;
+            if(d.notes.length) html += `<div class="idx-pill idx-n">${d.notes.length}d</div>`;
+            html += `</div>`;
+        } else { // Normal Mode
+            d.pins.forEach(pin => {
+                let displayText = pin.txt;
+                let chipClass = '';
+                if(pin.time) {
+                    const rel = getRelTime(key, pin.time);
+                    displayText = `<b>${rel.txt}</b> ${pin.txt}`;
+                    if(rel && rel.class === 'late') chipClass = 'is-late';
+                }
+                html += `<div class="pin-chip ${chipClass}">${displayText}</div>`;
+            });
+            const activeT = d.tasks.filter(t => t.status !== 'done' && t.status !== 'skip').length;
+            if(activeT || d.notes.length) {
+                html += `<div class="mini-dots">`;
+                if(activeT) html += `<div class="m-dot" style="background:var(--success)"></div>`;
+                if(d.notes.length) html += `<div class="m-dot" style="background:var(--warn)"></div>`;
+                html += `</div>`;
+            }
+        }
+        cell.innerHTML = html;
+        grid.appendChild(cell);
+    }
+}
+
+
+
+
+// ১. টাইমলাইন রেন্ডার ফাংশন (কালার সাপোর্ট সহ)
+function renderTimeline(y, m) {
+    const box = document.getElementById('timelineBox');
+    if (!box) return;
+    box.innerHTML = '';
+    
+    const daysStr = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    
+    const todayKey = new Date().toISOString().split('T')[0];
+    if(!selKey) selKey = todayKey;
+
+    for(let i=1; i<=daysInMonth; i++) {
+        const dObj = new Date(y, m, i);
+        const key = dObj.toISOString().split('T')[0];
+        const dayData = db[key] || {bg:'#ffffff', pins:[], tasks:[], notes:[]};
+        
+        const el = document.createElement('div');
+        el.className = `tl-item ${key === selKey ? 'active' : ''}`;
+        
+        // --- কালার লজিক ---
+        // যদি দিনটি সিলেক্টেড (active) না থাকে, তবে সেভ করা ব্যাকগ্রাউন্ড কালার দেখাবে
+        if (key !== selKey && dayData.bg && dayData.bg !== '#ffffff') {
+            el.style.background = dayData.bg;
+            el.style.borderColor = "rgba(0,0,0,0.05)";
+        }
+
+        const pCount = dayData.pins.length;
+        const tCount = dayData.tasks.filter(t => t.status !== 'done').length;
+        const nCount = dayData.notes.length;
+
+        let indicatorsHTML = `<div class="tl-indicators">`;
+        if(pCount > 0) indicatorsHTML += `<span class="tl-ind tl-p">${pCount}p</span>`;
+        if(tCount > 0) indicatorsHTML += `<span class="tl-ind tl-t">${tCount}t</span>`;
+        if(nCount > 0) indicatorsHTML += `<span class="tl-ind tl-n">${nCount}d</span>`;
+        indicatorsHTML += `</div>`;
+
+        el.innerHTML = `
+            <div class="tl-day">${daysStr[dObj.getDay()]}</div>
+            <div class="tl-date">${i}</div>
+            ${indicatorsHTML}
+        `;
+
+        el.onclick = () => {
+            selKey = key;
+            renderTimeline(y, m);
+            renderSheet();
+        };
+        
+        box.appendChild(el);
+        if(key === selKey) {
+            setTimeout(() => el.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'}), 50);
+        }
+    }
+}
+
+// ২. কালার সেট ফাংশন আপডেট (যাতে সাথে সাথে টাইমলাইন আপডেট হয়)
+function setBoxColor(c) { 
+    db[selKey].bg = c; 
+    document.getElementById('sheetCard').style.background = c; 
+    saveDB(); 
+    
+    // ৩য় মোডে থাকলে টাইমলাইন রি-রেন্ডার করো যাতে কালার চেঞ্জ দেখা যায়
+    if(viewMode === 2) {
+        const d = new Date(selKey);
+        renderTimeline(d.getFullYear(), d.getMonth());
+    }
+}
+
+
+
+
+
+
+
+    function moveMonth(n) { viewDate.setMonth(viewDate.getMonth()+n); renderCal(); }
+
+    // --- TIME PICKER ---
+    function buildTimePicker() {
+        const hBox = document.getElementById('tpHours');
+        const mBox = document.getElementById('tpMins');
+        for(let i=0; i<24; i++) {
+            const val = i.toString().padStart(2,'0');
+            hBox.innerHTML += `<div class="tp-btn" onclick="tpSelect('h', '${val}', this)">${val}</div>`;
+        }
+        for(let i=0; i<60; i+=5) {
+            const val = i.toString().padStart(2,'0');
+            mBox.innerHTML += `<div class="tp-btn" onclick="tpSelect('m', '${val}', this)">${val}</div>`;
+        }
+    }
+    function tpSelect(type, val, el) {
+        if(type === 'h') tpSel.h = val; else tpSel.m = val;
+        const parent = type==='h'?document.getElementById('tpHours'):document.getElementById('tpMins');
+        Array.from(parent.children).forEach(c => c.classList.remove('active'));
+        el.classList.add('active');
+    }
+    function openTimePicker(type, index) {
+        tpTarget = { type, index };
+        const curr = db[selKey][type==='pin'?'pins':'tasks'][index].time;
+        if(curr) { const [h, m] = curr.split(':'); tpSel = { h, m }; }
+        document.getElementById('timePicker').classList.add('open');
+    }
+    function closeTimePicker() { document.getElementById('timePicker').classList.remove('open'); }
+    function saveTimePicker() {
+        updItem(tpTarget.type, tpTarget.index, 'time', `${tpSel.h}:${tpSel.m}`);
+        closeTimePicker(); renderSheet();
+    }
+
+    // --- DATE PICKER (UNLIMITED) ---
+    function buildDatePicker() {
+        const mBox = document.getElementById('dpMonths');
+        const yBox = document.getElementById('dpYears');
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        
+        months.forEach((m, i) => {
+            mBox.innerHTML += `<div class="tp-btn" onclick="dpSelect('m', ${i}, this)">${m}</div>`;
+        });
+        
+        // Generate years 1900 to 2100 (Effective unlimited for planner)
+        for(let i=1900; i<=2100; i++) {
+            yBox.innerHTML += `<div class="tp-btn" id="yr-${i}" onclick="dpSelect('y', ${i}, this)">${i}</div>`;
+        }
+    }
+
+    function dpSelect(type, val, el) {
+        if(type === 'm') dpSel.m = val; else dpSel.y = val;
+        const parent = type==='m'?document.getElementById('dpMonths'):document.getElementById('dpYears');
+        Array.from(parent.children).forEach(c => c.classList.remove('active'));
+        el.classList.add('active');
+    }
+
+    function openDatePicker() {
+        dpSel.m = viewDate.getMonth();
+        dpSel.y = viewDate.getFullYear();
+        
+        const mBox = document.getElementById('dpMonths');
+        const yBox = document.getElementById('dpYears');
+        
+        Array.from(mBox.children).forEach((c, i) => c.classList.toggle('active', i === dpSel.m));
+        
+        // Handle Year Scrolling
+        Array.from(yBox.children).forEach(c => c.classList.remove('active'));
+        const yrBtn = document.getElementById(`yr-${dpSel.y}`);
+        if(yrBtn) {
+            yrBtn.classList.add('active');
+            yrBtn.scrollIntoView({block:'center'});
+        }
+
+        document.getElementById('datePicker').classList.add('open');
+    }
+
+    function closeDatePicker() { document.getElementById('datePicker').classList.remove('open'); }
+    function saveDatePicker() {
+        viewDate = new Date(dpSel.y, dpSel.m, 1);
+        renderCal();
+        closeDatePicker();
+    }
+
+    // --- CUSTOM DELETE CONFIRM ---
+    function delItem(type, index) {
+        pendingDelete = { type, index };
+        document.getElementById('confirmOverlay').classList.add('open');
+    }
+
+    function closeConfirm() { document.getElementById('confirmOverlay').classList.remove('open'); }
+
+    function confirmYes() {
+        const { type, index } = pendingDelete;
+        if(type==='note') db[selKey].notes.splice(index,1);
+        else db[selKey][type==='pin'?'pins':'tasks'].splice(index,1);
+        renderSheet();
+        closeConfirm();
+    }
+
+    // --- SHEET LOGIC ---
+function openSheet(key, dateObj) {
+    selKey = key; 
+    isEdit = false;
+    
+    // শিটের কালার সেট করা
+    if(!db[selKey]) db[selKey] = {bg:'#ffffff', pins:[], tasks:[], notes:[]};
+    document.getElementById('sheetCard').style.background = db[selKey].bg;
+
+    // ৩য় মোডে থাকলে ওভারলে ক্লাস অ্যাড হবে না (কারণ CSS দিয়ে হ্যান্ডেল করা হয়েছে)
+    // কিন্তু ডাটা রেন্ডার হতে হবে
+    if(viewMode !== 2) {
+        document.getElementById('overlay').classList.add('active');
+    }
+    
+    document.getElementById('fabBtn').innerText = "+";
+    
+    // ট্যাব সিলেকশন লজিক
+    if(db[selKey].pins.length) setTab('pin'); 
+    else if(db[selKey].tasks.length) setTab('task'); 
+    else setTab('pin');
+    
+    renderSheet();
+}
+
+
+
+function closeSheet() {
+    // ১. যদি এডিট মোড চালু থাকে
+    if (isEdit) {
+        // সরাসরি ক্লোজ না করে আগে এডিট মোড থেকে বের করে আনা
+        cancelEditNote(); 
+        return; 
+    }
+
+    // ২. ৩য় মোড (Split View) হলে ক্লোজ হবে না
+    if(viewMode === 2) return;
+
+    // ৩. UI ক্লিনআপ
+    document.getElementById('overlay').classList.remove('active');
+    document.getElementById('sheetCard').classList.remove('full-mode');
+    document.body.classList.remove('editing-active'); 
+
+    // ৪. ভেরিয়েবল রিসেট ও সেভ
+    isEdit = false; 
+    quill = null; 
+    editingNoteIdx = null;
+
+    saveDB(); 
+    renderCal();
+}
+
+
+
+
+
+    function toggleFullSheet() { document.getElementById('sheetCard').classList.toggle('full-mode'); }
+    
+
+
+
+function toggleEdit() {
+    isEdit = !isEdit;
+
+    // --> যদি নোট ট্যাব খোলা থাকে এবং এডিট মোড অন হয়, তাহলে ফুল স্ক্রিন হবে
+    if (isEdit && curTab === 'note') {
+        document.body.classList.add('editing-active');
+        document.getElementById('sheetCard').classList.add('full-mode');
+    } else {
+        // এডিট বন্ধ করলে নরমাল অবস্থায় ফিরে আসবে
+        document.body.classList.remove('editing-active');
+        document.getElementById('sheetCard').classList.remove('full-mode');
+    }
+
+    document.getElementById('fabBtn').innerText = isEdit ? "✓" : "+";
+    renderSheet();
+}
+
+
+
+function setTab(t) {
+    // ট্যাব বদলানোর সাথে সাথে এডিট মোড বন্ধ করা
+    if(isEdit) cancelEditNote(); 
+
+    curTab = t;
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.innerText.toLowerCase().includes(t.replace('note','doc'))));
+    document.getElementById('taskFilters').style.display = (t === 'task' && !isEdit) ? 'flex' : 'none';
+    renderSheet();
+}
+
+
+
+
+    function setTaskFilter(f, el) {
+        taskFilter = f;
+        document.querySelectorAll('.f-chip').forEach(c => c.classList.remove('active'));
+        el.classList.add('active');
+        renderSheet();
+    }
+
+
+
+
+
+
+
+// --- 1. Render Sheet (Note Tab এর অংশ আপডেট) ---
+// --- GLOBAL VARIABLES UPDATE ---
+// --- GLOBAL VARIABLES ---
+// আগে যদি editingNoteIndex বা editingNoteIdx থাকে তা মুছে দিয়ে শুধু এটি রাখুন
+// --- GLOBAL VARIABLES ---
+//let editingNoteIdx = null; 
+// নোটের কালার লিস্ট আগের মতোই থাকবে
+const noteColors = [
+    '#fefce8', '#f0fdf4', '#eff6ff', '#fff1f2', 
+    '#f5f3ff', '#fff7ed', '#e0f2fe', '#ffffff'
+];
+
+function getRandomColor() {
+    return noteColors[Math.floor(Math.random() * noteColors.length)];
+}
+
+// --- 1. START EDIT FUNCTION ---
+function startEditNote(index) {
+    editingNoteIdx = index;
+    isEdit = true;
+    
+    // --> ফুল স্ক্রিন ক্লাস যোগ করা হলো
+    document.body.classList.add('editing-active');
+    document.getElementById('sheetCard').classList.add('full-mode');
+
+    const fab = document.getElementById('fabBtn');
+    if(fab) fab.innerText = "✓";
+    
+    renderSheet(); 
+}
+
+
+// --- 2. CANCEL EDIT FUNCTION ---
+function cancelEditNote() {
+    editingNoteIdx = null;
+    isEdit = false;
+    
+    // Quill instance মেমোরি থেকে সরিয়ে ফেলা যাতে রেন্ডারিং ক্র্যাশ না হয়
+    if (quill) {
+        quill = null; 
+    }
+
+    // CSS ক্লাস রিমুভ
+    document.body.classList.remove('editing-active');
+    document.getElementById('sheetCard').classList.remove('full-mode');
+    
+    // FAB বাটন রিসেট
+    const fab = document.getElementById('fabBtn');
+    if(fab) fab.innerText = "+";
+    
+    // ডাটাবেস থেকে আবার ভিউ মোড রেন্ডার করা
+    renderSheet(); 
+}
+
+// --- 3. SAVE NOTE FUNCTION (FIXED validation for Video/Formula) ---
+// saveNote এর ভেতরে
+function saveNote() {
+    if(!quill) return;
+    const txt = quill.root.innerHTML;
+    const plainTxt = quill.getText().trim();
+    const hasContent = plainTxt.length > 0 || txt.includes('<img') || txt.includes('<iframe') || txt.includes('katex');
+
+    if(!hasContent) {
+        window.parent.showAlert("Empty Note", "Please write something or add media before saving!");
+        return;
+    }
+
+    if(editingNoteIdx !== null) {
+        // আপডেট মোড
+        db[selKey].notes[editingNoteIdx].html = txt;
+    } else {
+        // নতুন নোট মোড
+        db[selKey].notes.push({ 
+            html: txt, 
+            bg: getRandomColor() 
+        });
+    }
+
+    saveDB();       
+    cancelEditNote(); 
+}
+
+
+
+
+
+
+// --- 4. RENDER SHEET (With Full Toolbar) ---
+function renderSheet() {
+    if(!selKey || !db[selKey]) return; 
+    const box = document.getElementById('sheetBody'); 
+    const data = db[selKey];
+    
+    if(!data) return;
+
+    // --- A. EDIT MODE ---
+    if(isEdit) {
+        document.getElementById('taskFilters').style.display = 'none';
+
+        box.innerHTML = ''; 
+
+
+
+
+
+
+if(curTab === 'note') {
+            // --- FIX START: Scrollable Editor with Safe Space ---
+            
+            // ১. মেইন বক্সের লেআউট ফিক্স
+            box.style.display = 'flex';
+            box.style.flexDirection = 'column';
+            box.style.height = '100%'; 
+            box.style.padding = '0'; 
+
+            box.innerHTML = `
+            <!-- Editor Container: এটি ফ্লেক্সবক্সের বাকি জায়গা নেবে এবং এখানেই স্ক্রল হবে -->
+            <div class="editor-container" style="flex: 1; position: relative; overflow: hidden; display: flex; flex-direction: column;">
+                <!-- Quill Editor: এখানে overflow-y: auto দেওয়া হয়েছে যাতে শুধু এই অংশটুকু স্ক্রল হয় -->
+                <div id="quillEditor" style="height: 100%; overflow-y: auto;"></div>
+            </div>
+            
+            <!-- Button Area: এটি ফিক্সড থাকবে এবং এর উপরে Z-Index বেশি দেওয়া হয়েছে -->
+            <div style="flex-shrink: 0; padding: 15px; background: #fff; border-top: 1px solid #e2e8f0; z-index: 50; display: flex; gap: 10px; box-shadow: 0 -4px 15px rgba(0,0,0,0.08);">
+                <button onclick="saveNote()" style="flex:1; background:var(--primary); color:#fff; padding:12px; border:none; border-radius:10px; font-weight:700; font-size:1rem; cursor:pointer;">
+                    ${editingNoteIdx !== null ? 'Update Note' : 'Save Note'}
+                </button>
+                <button onclick="cancelEditNote()" style="width:100px; background:#f1f5f9; color:var(--text-main); padding:12px; border:none; border-radius:10px; font-weight:700; cursor:pointer;">
+                    Cancel
+                </button>
+            </div>`;
+            // --- FIX END ---
+
+            // --- FULL QUILL CONFIGURATION ---
+            quill = new Quill('#quillEditor', {
+                theme: 'snow',                                                                                        
+                placeholder: 'Type something...',
+                modules: {                                             
+                    toolbar: {
+                        container: [
+                            [{ 'font': [] }, { 'size': ['small', false, 'large', 'huge'] }], 
+                            ['bold', 'italic', 'underline', 'strike'],        
+                            [{ 'color': [] }, { 'background': [] }],          
+                            [{ 'header': 1 }, { 'header': 2 }, 'blockquote', 'code-block'], 
+                            [{ 'list': 'ordered'}, { 'list': 'bullet' }],     
+                            [{ 'align': [] }],        
+                            ['link', 'image', 'video', 'formula'],            
+                            ['clean']                                         
+                        ]
+                    }
+                }
+            });
+
+            // --- MAGIC FIX: Bottom Padding for Scrolling ---
+            // এই অংশটি লেখার নিচে ২০০ পিক্সেল ফাঁকা জায়গা তৈরি করবে
+            // ফলে আপনি স্ক্রল করে লেখা অনেক উপরে তুলতে পারবেন
+            const editorContent = document.querySelector('.ql-editor');
+            if(editorContent) {
+                editorContent.style.paddingBottom = "200px"; // এখানে ২০০ পিক্সেল ফাঁকা রাখা হলো
+            }
+
+            // Load existing data
+            if(editingNoteIdx !== null && data.notes[editingNoteIdx]) {
+                quill.clipboard.dangerouslyPasteHTML(0, data.notes[editingNoteIdx].html);
+            }
+            return;
+        }
+
+
+
+
+
+        // --- PIN & TASK EDITOR (No Changes here) ---
+        const list = curTab === 'pin' ? data.pins : data.tasks;
+        if(!list.length) {
+             box.innerHTML = `<div style="text-align:center; color:var(--text-sub); margin-top:20px;">Empty List. Click "Add Item" below.</div>`;
+        }
+
+        list.forEach((item, i) => {
+            box.innerHTML += `
+            <div class="edit-row">
+                <button class="btn-time-trig" onclick="openTimePicker('${curTab}', ${i})">
+                    ${item.time || '<svg style="width:14px;height:14px"><use href="#icon-cal"/></svg>'}
+                </button>
+
+
+		<textarea class="inp-flat" rows="1" placeholder="Type here..." oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updItem('${curTab}',${i},'txt',this.value)">${item.txt}</textarea>
+
+                <button onclick="delItem('${curTab}', ${i})" style="color:var(--danger); background:#fee2e2; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:700;">×</button>
+            </div>`;
+        });
+        
+        box.innerHTML += `
+        <button style="width:100%; padding:14px; border:2px dashed var(--border); color:var(--text-sub); border-radius:12px; background:transparent; font-weight:700; margin-top:10px; cursor:pointer;" onclick="addItem('${curTab}')">
+            + Add New Item
+        </button>`;
+
+    } else {
+        // --- B. VIEW MODE ---
+        box.innerHTML = '';
+        
+        if(curTab === 'note') {
+            if(!data.notes.length) {
+                box.innerHTML = `
+                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:200px; color:var(--text-sub);">
+                    <div style="font-size:3rem; opacity:0.3;">📝</div>
+                    <div style="font-weight:600; margin-top:10px;">No notes yet</div>
+                    <div style="font-size:0.8rem;">Tap + to create one</div>
+                </div>`;
+                return;
+            }
+
+            box.innerHTML = `<div class="sticker-grid">` + 
+            data.notes.map((n, i) => `
+                <div class="sticker" style="background:${n.bg || '#fff'}">
+                    <div class="sticker-actions">
+                        <button class="st-btn edit" onclick="startEditNote(${i})">
+                            <svg style="width:16px;height:16px;"><use href="#icon-edit"/></svg>
+                        </button>
+                        <button class="st-btn del" onclick="delItem('note',${i})">
+                            <svg style="width:18px;height:18px;"><use href="#icon-close"/></svg>
+                        </button>
+                    </div>
+                    <div class="ql-editor" style="padding:0;">${n.html}</div>
+                </div>
+            `).join('') + `</div>`;
+            return;
+        }
+
+        // Tasks & Pins rendering remains same...
+        let list = curTab === 'pin' ? data.pins : data.tasks;
+        if(curTab === 'task') {
+            list = list.map((item, idx) => ({...item, oIdx: idx}));
+            if(taskFilter !== 'all') {
+                if(taskFilter === 'pending') list = list.filter(i => !i.status || i.status === 'pending');
+                else list = list.filter(i => i.status === taskFilter);
+            }
+        }
+
+        if(!list.length) {
+             box.innerHTML = `<div style="text-align:center; color:var(--text-sub); margin-top:50px; font-weight:600;">No items found</div>`;
+        }
+
+        list.forEach((item) => {
+            const status = item.status || 'pending';
+            const rel = getRelTime(selKey, item.time);
+            let timeHTML = '';
+            if(item.time) {
+                const badgeColor = rel.class === 'late' ? 'color:var(--danger)' : 'color:var(--primary)';
+                timeHTML = `
+                <div class="card-footer">
+                    <div class="badge-time" style="background:var(--bg-body)">${item.time}</div>
+                    <div class="badge-time" style="${badgeColor}; font-weight:800;">• ${rel.txt}</div>
+                </div>`;
+            }
+            let leftIndicator = '';
+            if(curTab === 'task') {
+                leftIndicator = `
+                <div class="card-check" onclick="toggleTask(${item.oIdx})">
+                    <svg style="width:14px; display:${status==='done'?'block':'none'}"><use href="#icon-check"/></svg>
+                </div>`;
+            } else {
+                leftIndicator = `<div style="width:4px; height:35px; background:${rel && rel.class==='late' ? 'var(--danger)' : 'var(--primary)'}; border-radius:4px;"></div>`;
+            }
+
+            box.innerHTML += `
+            <div class="card ${status}">
+                ${leftIndicator}
+                <div class="card-content">
+                    <div class="card-txt">${item.txt || 'Untitled'}</div>
+                    ${timeHTML}
+                </div>
+                ${curTab === 'task' ? `<button onclick="skipTask(${item.oIdx})" style="background:none; border:none; color:var(--text-sub); font-size:0.7rem; font-weight:700; padding:5px;">SKIP</button>` : ''}
+            </div>`;
+        });
+    }
+
+
+autoResizeAll();
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    function addItem(type) { db[selKey][type==='pin'?'pins':'tasks'].push({txt:'', time:'', status:'pending'}); renderSheet(); }
+    function updItem(type, idx, f, v) { db[selKey][type==='pin'?'pins':'tasks'][idx][f] = v; }
+    
+    function toggleTask(idx) {
+        const t = db[selKey].tasks[idx];
+        t.status = t.status === 'done' ? 'pending' : 'done';
+        saveDB(); renderSheet(); renderCal();
+    }
+    
+    function skipTask(idx) {
+        const t = db[selKey].tasks[idx];
+        t.status = t.status === 'skip' ? 'pending' : 'skip';
+        saveDB(); renderSheet(); renderCal();
+    }
+    
+
+
+// addSticker এর ভেতরে
+function addSticker() {
+    if(!quill) return;
+    const txt = quill.root.innerHTML;
+    if(quill.getText().trim().length === 0 && !txt.includes('<img')) {
+        window.parent.showAlert("Empty Note", "Please write something!");
+        return;
+    }
+
+        const bg = db[selKey].bg !== '#ffffff' ? db[selKey].bg : '#fffbeb';
+        db[selKey].notes.push({html:txt, bg:bg}); 
+        quill.setContents([]);
+        renderSheet();
+    }
+
+// নতুন IndexedDB সেভ ফাংশন
+    function saveDB() {
+        if (!idb) return;
+        const tx = idb.transaction(['data'], 'readwrite');
+        const store = tx.objectStore('data');
+        store.put(db, 'mainStore');
+    }
+
+    // নতুন ইনিশিয়ালাইজেশন ফাংশন (DB সেটআপ সহ)
+
+/* --- TOGGLE PROJECT FUNCTION --- */
+function toggleProjects() {
+    const sec = document.getElementById('projSection');
+    sec.classList.toggle('collapsed');
+    
+    // ইউজারের চয়েস সেভ করে রাখা (ঐচ্ছিক)
+    const isClosed = sec.classList.contains('collapsed');
+    localStorage.setItem('projCollapsed', isClosed);
+}
+
+// অ্যাপ চালু হওয়ার সময় আগের অবস্থা চেক করা
+function initProjectState() {
+    const isClosed = localStorage.getItem('projCollapsed') === 'true';
+    const sec = document.getElementById('projSection');
+    if(isClosed && sec) {
+        sec.classList.add('collapsed');
+    }
+}
+
+// init() ফাংশনের ভেতরে initProjectState() কল করে দিন
+// যেমন: placeProjectSection(); এর ঠিক পরেই
+
+
+
+
+
+
+function init() {
+        const request = indexedDB.open(DB_NAME, 1);
+
+        request.onupgradeneeded = (e) => {
+            const database = e.target.result;
+            if (!database.objectStoreNames.contains('data')) {
+                database.createObjectStore('data');
+            }
+        };
+
+        request.onsuccess = (e) => {
+            idb = e.target.result;
+            const tx = idb.transaction(['data'], 'readonly');
+            const store = tx.objectStore('data');
+            
+            store.get('mainStore').onsuccess = (ev) => {
+                db = ev.target.result || {};
+                
+                // 🚀 PRIORITY 1: UI Setup & Fast Rendering
+                applyViewModeClass(); 
+                updateViewToggle();
+                placeProjectSection(); 
+                initProjectState(); 
+                
+                // 🔥 PRIORITY 2: Render Projects Immediately (সবচেয়ে আগে প্রজেক্ট দেখাবে)
+                if (typeof initProjects === 'function') {
+                    initProjects();
+                }
+
+                // 🚀 PRIORITY 3: Open Today's Sheet (যদি Mode 3 তে থাকে)
+                if(viewMode === 2) {
+                    const todayKey = new Date().toISOString().split('T')[0];
+                    selKey = todayKey;
+                    renderSheet(); // শুধু আজকের ডেটা রেন্ডার হবে
+                }
+
+                // ⏳ PRIORITY 4: Deferred Loading (ভারী জিনিসগুলো 50ms পরে হবে)
+                setTimeout(() => {
+                    renderCal(); // পুরো ক্যালেন্ডার রেন্ডার হবে
+                    buildTimePicker();
+                    buildDatePicker();
+                    updateClock();
+                    setInterval(updateClock, 60000);
+                }, 50); // 50ms গ্যাপ দিলে ব্রাউজার UI পেইন্ট করার সময় পাবে
+            };
+        };
+
+        request.onerror = (e) => {
+            console.error("DB Error:", e);
+            startApp();
+        };
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+    function loadDataAndRender() {
+        const tx = idb.transaction(['data'], 'readonly');
+        const store = tx.objectStore('data');
+        const req = store.get('mainStore');
+
+        req.onsuccess = () => {
+            // যদি আগের ডেটা থাকে তা db তে লোড হবে, না থাকলে খালি অবজেক্ট
+            db = req.result || {};
+            startApp();
+        };
+    }
+
+
+
+
+
+function startApp() {
+        applyViewModeClass();
+        updateViewToggle();
+        
+        // 🚀 Priority: Render Projects first
+        if (typeof initProjects === 'function') {
+            initProjects();
+        }
+
+        if(viewMode === 2) {
+            const todayKey = new Date().toISOString().split('T')[0];
+            selKey = todayKey;
+            renderSheet(); 
+        }
+
+        // ⏳ Deferred Tasks
+        setTimeout(() => {
+            renderCal();
+            buildTimePicker();
+            buildDatePicker();
+            updateClock();
+            setInterval(() => {
+                updateClock();
+                const today = new Date();
+                if(viewDate.getMonth() === today.getMonth() && viewDate.getFullYear() === today.getFullYear()) {
+                    renderCal();
+                }
+                if(selKey && !isEdit) renderSheet(); 
+            }, 60000); 
+        }, 50);
+    }
+
+
+
+
+
+
+
+
+
+// AUTO SYNC LISTENER
+// ==========================================
+// AUTO SYNC LISTENER (FIXED FOR AI UPDATES)
+// ==========================================
+const syncChannel = new BroadcastChannel('app_sync');
+syncChannel.onmessage = (event) => {
+    if (event.data.type === 'refresh' && (event.data.target === 'planner' || event.data.target === 'all')) {
+        console.log("🤖 AI Updated Planner/Project. Refreshing UI...");
+        
+        // 100ms Delay দেওয়া হলো যাতে AI এর Database Write পুরোপুরি শেষ হতে পারে
+        setTimeout(() => {
+            if (!idb) return;
+            const tx = idb.transaction(['data'], 'readonly');
+            const store = tx.objectStore('data');
+            
+            store.get('mainStore').onsuccess = (ev) => {
+                db = ev.target.result || {};
+                
+                // ১. ক্যালেন্ডার আপডেট
+                renderCal(); 
+                
+                // ২. যদি ডেইলি শিট খোলা থাকে
+                if(selKey && !isEdit) renderSheet(); 
+                
+                // ৩. প্রজেক্ট লিস্ট (3D Cards) আপডেট
+                if (typeof renderProjects === 'function') {
+                    renderProjects();
+                }
+                
+                // ৪. প্রজেক্ট প্যানেল খোলা থাকলে তার ভেতরের টাস্ক আপডেট
+                if (curProjIdx !== null && document.getElementById('projectPanel').classList.contains('active')) {
+                    // সেফটি চেক: AI যদি প্রজেক্টটি ডিলিট করে দেয়, তবে প্যানেলটি বন্ধ করে দেবো
+                    if(db.projects && db.projects[curProjIdx]) {
+                        renderProjectContent();
+                    } else {
+                        closeProjectPanel();
+                    }
+                }
+                
+                // ৫. মাস্টার প্যানেল খোলা থাকলে সেটিও আপডেট
+                if (document.getElementById('masterPanel').classList.contains('active')) {
+                    renderMasterContent();
+                }
+            };
+        }, 100); // 100ms Magic Delay (Fixes the Sync Issue)
+    }
+};
+
+
+
+
+
+
+
+    init();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* =========================================================
+   PRO MASTER PLANNER - ULTIMATE PRECISION EDITION
+   ========================================================= */
+
+let curMasterTab = 'pin';
+let masterTaskFilter = 'all';
+let masterSearchQuery = '';
+let isMasterEditNote = false;
+let isDocCardView = localStorage.getItem('isDocCardView') === 'true';
+
+// ১. মাস্টার প্যানেল ওপেন (ডেটা সিঙ্ক নিশ্চিত করা)
+function openMasterPanel() {
+    isMasterEditNote = false;
+    
+    // ১. প্যানেলটি আগে স্ক্রিনে দেখান (Smooth Animation)
+    document.getElementById('masterPanel').classList.add('active');
+    
+    // ২. প্যানেলের ভেতরে লোডিং টেক্সট দেখান
+    document.getElementById('masterContent').innerHTML = `<div style="text-align:center; padding:50px; color:var(--text-sub);">Loading Data...</div>`;
+    
+    // ৩. UI ওপেন হওয়ার পর (10ms পরে) ভারী ডেটা প্রসেস করুন
+    setTimeout(() => {
+        renderMasterContent();
+    }, 10);
+}
+
+
+
+function closeMasterPanel() {
+    document.getElementById('masterPanel').classList.remove('active');
+    renderCal(); 
+}
+
+// ২. ট্যাব ও ফিল্টার কন্ট্রোল
+
+
+// ২. ট্যাব ও ফিল্টার কন্ট্রোল
+function setMasterTab(tab, el) {
+    curMasterTab = tab;
+    isMasterEditNote = false;
+    masterTaskFilter = 'all'; 
+    masterSearchQuery = ''; 
+
+    document.querySelectorAll('#masterPanel .tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    
+    const filterBar = document.getElementById('masterTaskFilters');
+    if(filterBar) filterBar.style.display = (tab === 'task') ? 'flex' : 'none';
+    
+    document.querySelectorAll('#masterTaskFilters .f-chip').forEach(c => {
+        c.classList.toggle('active', c.innerText.toLowerCase() === 'all');
+    });
+
+    renderMasterContent(); // এখানেই বাটনের শো/হাইড কন্ট্রোল করা আছে
+}
+
+
+
+function setMasterTaskFilter(f, el) {
+    masterTaskFilter = f;
+    document.querySelectorAll('#masterTaskFilters .f-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    renderMasterContent();
+}
+
+// ৩. স্মার্ট সার্চ ও হাইলাইট
+function handleMasterSearch(query) {
+    masterSearchQuery = query.toLowerCase().trim();
+    renderMasterContent();
+}
+
+function highlight(text, query) {
+    if (!query || !text || typeof text !== 'string') return text;
+    const regex = new RegExp(`(${query})`, 'gi');
+    return text.replace(regex, '<mark>$1</mark>');
+}
+
+function toggleMasterDocView() {
+    isDocCardView = !isDocCardView;
+    localStorage.setItem('isDocCardView', isDocCardView);
+    renderMasterContent();
+}
+
+// ৪. মূল রেন্ডারার (Design Improved)
+// ৪. মূল রেন্ডারার (Design Improved)
+// ৪. মূল রেন্ডারার (Design Improved)
+function renderMasterContent() {
+    const box = document.getElementById('masterContent');
+    
+    // প্লাস বাটন লজিক: !important কে ওভাররাইড করার জন্য setProperty ব্যবহার করা হয়েছে
+    const masterFab = document.querySelector('#masterPanel .add-fab');
+    if (masterFab) {
+        if (isMasterEditNote || curMasterTab === 'pin') {
+            masterFab.style.setProperty('display', 'none', 'important');
+        } else {
+            masterFab.style.setProperty('display', 'flex', 'important');
+        }
+    }
+
+    if (isMasterEditNote) return;
+
+    let controlsHTML = `
+        <div class="mp-controls" style="padding: 12px 16px; background: #fff; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 10;">
+            <input type="text" class="mp-search-input" placeholder="Search across all data..." 
+            oninput="handleMasterSearch(this.value)" value="${masterSearchQuery}" 
+            style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 0.9rem;">
+            ${curMasterTab === 'note' ? `<div style="display:flex; justify-content: flex-end; margin-top: 8px;">
+                <button class="view-toggle-btn" onclick="toggleMasterDocView()" style="font-size: 0.7rem; font-weight: 800; background: var(--primary-soft); color: var(--primary); border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">
+                    View: ${isDocCardView ? 'List' : 'Grid'}
+                </button>
+            </div>` : ''}
+        </div>`;
+    
+    box.innerHTML = controlsHTML;
+    
+    let pinnedList =[];
+    let regularGroups = {};
+    const type = curMasterTab === 'note' ? 'notes' : (curMasterTab + 's');
+
+    Object.keys(db).forEach(key => {
+        if (key === 'mainStore') return;
+        const source = db[key];
+        if (!source || !source[type]) return;
+
+        source[type].forEach((item, index) => {
+            let matchesFilter = true;
+            if (curMasterTab === 'task' && masterTaskFilter !== 'all') {
+                const status = item.status || 'pending';
+                if (masterTaskFilter !== status) matchesFilter = false;
+            }
+
+            let matchesSearch = true;
+            if (masterSearchQuery) {
+                const content = (item.txt || item.html || '').toLowerCase();
+                const timeStr = (item.time || '').toLowerCase();
+                if (!content.includes(masterSearchQuery) && !timeStr.includes(masterSearchQuery) && !key.includes(masterSearchQuery)) {
+                    matchesSearch = false;
+                }
+            }
+
+            if (matchesFilter && matchesSearch) {
+                const itemData = { ...item, parentKey: key, realIdx: index };
+                if (item.isPinned) pinnedList.push(itemData);
+                else {
+                    if (!regularGroups[key]) regularGroups[key] =[];
+                    regularGroups[key].push(itemData);
+                }
+            }
+        });
+    });
+
+    const containerClass = (curMasterTab === 'note' && !isDocCardView) ? 'sticker-grid' : 'doc-card-mode';
+
+    // ১. পিনড সেকশন
+    if (pinnedList.length > 0) {
+        const pinSection = document.createElement('div');
+        pinSection.className = 'pinned-header';
+        pinSection.style.cssText = "margin: 15px; padding: 12px; background: #fffbeb; border: 1px dashed #f59e0b; border-radius: 14px;";
+        pinSection.innerHTML = `<div class="pin-label" style="color:#f59e0b; font-weight:800; font-size:0.75rem; margin-bottom:12px; display:flex; align-items:center; gap:5px;">📌 PINNED ITEMS</div>`;
+        const container = document.createElement('div');
+        container.className = containerClass;
+        pinnedList.forEach(item => container.appendChild(createMasterCard(item, item.parentKey, item.realIdx)));
+        pinSection.appendChild(container);
+        box.appendChild(pinSection);
+    }
+
+    // ২. গ্রুপড সেকশন (তারিখ অনুযায়ী)
+    const sortedKeys = Object.keys(regularGroups).sort((a,b) => b.localeCompare(a));
+    sortedKeys.forEach(dateKey => {
+        const section = document.createElement('div');
+        section.style.padding = "0 16px";
+        const title = dateKey === 'general' ? '⚡ ALL TIME' : `📅 ${dateKey}`;
+        section.innerHTML = `<div class="group-label" style="border-bottom: 1px solid #e2e8f0; margin: 20px 0 12px; padding-bottom: 6px; font-weight: 800; font-size: 0.75rem; color: #64748b;">${title}</div>`;
+        const container = document.createElement('div');
+        container.className = containerClass;
+        regularGroups[dateKey].forEach(item => container.appendChild(createMasterCard(item, dateKey, item.realIdx)));
+        section.appendChild(container);
+        box.appendChild(section);
+    });
+
+    autoResizeAll();
+}
+
+
+
+
+
+// ৫. কার্ড জেনারেটর (পিন ও ডিলিটের মাঝে ফাঁকা নিশ্চিত করা)
+// ৫. কার্ড জেনারেটর (Premium Full-Width Layout)
+// ৫. কার্ড জেনারেটর (Premium Full-Width Layout with Distinct Pin Style)
+function createMasterCard(item, dateKey, realIdx) {
+    const el = document.createElement('div');
+    const isPinned = item.isPinned || false;
+    const type = curMasterTab === 'note' ? 'notes' : (curMasterTab + 's');
+
+    let timerHTML = '';
+    if (item.time && dateKey !== 'general') {
+        const rel = getRelTime(dateKey, item.time);
+        timerHTML = `<span class="acc-timer ${rel.class === 'late' ? 'timer-late' : 'timer-active'}" style="margin-left:8px; font-size:0.6rem; padding: 3px 8px; border-radius: 6px; color:#fff; background:${rel.class==='late'?'var(--danger)':'var(--primary)'}">🕒 ${rel.txt}</span>`;
+    }
+
+    const metaHTML = `
+        <div class="meta-row" style="margin:0; padding:0; border:none; font-size: 0.55rem; color: #94a3b8; display:flex; flex-direction:column; gap:2px;">
+            <span>Added: ${item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}</span>
+            ${item.updatedAt ? `<span>Updated: ${new Date(item.updatedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>` : ''}
+        </div>
+    `;
+
+    if (curMasterTab === 'note') {
+        // --- Note Card Style (Existing Sticker/Doc Style) ---
+        el.className = isDocCardView ? 'doc-list-card' : 'sticker';
+        if(isPinned) el.style.boxShadow = "0 0 0 2px #f59e0b";
+        el.style.cssText += `background: ${item.bg || '#fff'}; border-radius: 12px; padding: 16px; margin-bottom: 12px; position: relative; border: 1px solid #e2e8f0;`;
+        el.innerHTML = `
+            <div class="sticker-actions" style="position: absolute; top: 10px; right: 10px; display: flex; gap: 12px; align-items: center; background: rgba(255,255,255,0.8); padding: 4px 8px; border-radius: 8px;">
+                <button onclick="toggleMasterPin('${dateKey}', 'notes', ${realIdx})" style="border:none; background:none; cursor:pointer; font-size: 1.1rem;">${isPinned?'📌':'📍'}</button>
+                <button onclick="openMasterNoteEditor('${dateKey}', ${realIdx})" style="border:none; background:none; cursor:pointer; font-size: 1rem;">✎</button>
+                <button onclick="deleteMasterItem('${dateKey}', 'notes', ${realIdx})" style="border:none; background:none; cursor:pointer; color:var(--danger); font-size: 1.1rem; font-weight:bold;">✕</button>
+            </div>
+            <div class="ql-editor" style="padding:0; font-size:0.95rem; line-height: 1.5;">${highlight(item.html, masterSearchQuery)}</div>
+            ${metaHTML}
+        `;
+    } 
+    else if (curMasterTab === 'pin') {
+        // --- Premium Pin Style (Cleaner & Beautiful) ---
+        el.style.cssText = `background: #fff; border-radius: 16px; padding: 18px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 12px; border: 1px solid #e2e8f0; border-left: 5px solid ${isPinned ? '#f59e0b' : 'var(--primary)'}; box-shadow: 0 4px 15px rgba(0,0,0,0.04);`;
+
+        el.innerHTML = `
+            <div style="width: 100%;">
+                <textarea class="inp-flat" rows="1" style="flex: 1; background:transparent; border:none; padding:0; font-weight:800; font-size:1.1rem; color:var(--text-main); line-height: 1.4; resize: none; overflow: hidden; width: 100%; word-break: break-word;" placeholder="Type pin description..." oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updateMasterItem('${dateKey}', 'pins', ${realIdx}, 'txt', this.value)">${(typeof item.txt === 'string') ? item.txt : ''}</textarea>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span onclick="openMasterTimePicker('${dateKey}', 'pins', ${realIdx})" style="color:var(--primary); cursor:pointer; font-weight:800; font-size: 0.75rem; background: var(--primary-soft); padding: 5px 10px; border-radius: 8px;">
+                    ${highlight(item.time || 'Set Time', masterSearchQuery)}
+                </span>
+                ${timerHTML}
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px; padding-top: 12px; border-top: 1px solid #f1f5f9;">
+                ${metaHTML}
+                <div style="display:flex; gap: 10px;">
+                    <button onclick="toggleMasterPin('${dateKey}', 'pins', ${realIdx})" style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:6px 12px; cursor:pointer; font-size: 1rem;">${isPinned?'📌':'📍'}</button>
+                    <button onclick="deleteMasterItem('${dateKey}', 'pins', ${realIdx})" style="background:#fee2e2; border:1px solid #fecaca; border-radius:8px; padding:6px 12px; cursor:pointer; color:var(--danger); display: flex; align-items: center; justify-content: center;">
+                        <svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    else {
+        // --- Premium Task Style (With Status Logic) ---
+        const status = item.status || 'pending';
+        el.className = `card ${status}`;
+        el.style.cssText = `background: #fff; border-radius: 12px; padding: 14px 14px 10px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; border: 1px solid #e2e8f0; border-left: 4px solid ${isPinned ? '#f59e0b' : (status === 'done' ? 'var(--success)' : 'var(--primary)')}; box-shadow: 0 3px 10px rgba(0,0,0,0.03);`;
+
+        const safeText = (typeof item.txt === 'string') ? item.txt : '';
+
+        el.innerHTML = `
+            <div style="display: flex; gap: 12px; align-items: flex-start; width: 100%;">
+                <div class="card-check" onclick="toggleMasterTask('${dateKey}', ${realIdx})" style="width: 22px; height: 22px; flex-shrink: 0; border: 2px solid ${status==='done'?'var(--success)':'#cbd5e1'}; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; background: ${status==='done'?'var(--success)':'transparent'}; margin-top: 2px;">
+                    <svg style="width:12px; fill:white; display:${status === 'done' ? 'block' : 'none'}" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                </div>
+
+                <textarea class="inp-flat" rows="1" style="flex: 1; background:transparent; border:none; padding:0; font-weight:700; font-size:1rem; color:var(--text-main); line-height: 1.5; resize: none; overflow: hidden; width: 100%; word-break: break-word;" placeholder="Write a task..." oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updateMasterItem('${dateKey}', 'tasks', ${realIdx}, 'txt', this.value)">${safeText}</textarea>
+            </div>
+
+            <div style="display: flex; align-items: center; padding-left: 34px;">
+                <div class="card-footer" style="display: flex; align-items: center; gap: 6px;">
+                    ${dateKey !== 'general' ? `<span onclick="openMasterTimePicker('${dateKey}', 'tasks', ${realIdx})" style="color:var(--primary); cursor:pointer; font-weight:800; font-size: 0.75rem; background: var(--primary-soft); padding: 4px 8px; border-radius: 6px;">${highlight(item.time || 'Set Time', masterSearchQuery)}</span> ${timerHTML}` : '<span style="font-size:0.7rem; font-weight:700; color:#64748b; background: #f1f5f9; padding: 4px 8px; border-radius: 6px;">⚡ No Deadline</span>'}
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 6px; padding-top: 10px; border-top: 1px dashed #e2e8f0;">
+                ${metaHTML}
+                <div style="display:flex; gap: 8px; align-items: center;">
+                    <button onclick="skipMasterTask('${dateKey}', ${realIdx})" style="background:${status === 'skip' ? '#e2e8f0' : '#f8fafc'}; border:1px solid #e2e8f0; border-radius:6px; font-size:0.65rem; font-weight:800; padding:6px 12px; color: #475569; cursor: pointer;">${status === 'skip' ? 'RESET' : 'SKIP'}</button>
+                    <button onclick="toggleMasterPin('${dateKey}', 'tasks', ${realIdx})" style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:6px 10px; cursor:pointer; font-size: 0.9rem;">${isPinned?'📌':'📍'}</button>
+                    <button onclick="deleteMasterItem('${dateKey}', 'tasks', ${realIdx})" style="background:#fee2e2; border:1px solid #fecaca; border-radius:6px; padding:6px 10px; cursor:pointer; color:var(--danger); font-size: 0.9rem; display: flex; align-items: center; justify-content: center;"><svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+                </div>
+            </div>
+        `;
+    }
+    return el;
+}
+
+
+// ৬. নির্ভুল IndexedDB সেভ ফাংশনসমূহ (Precision Logic)
+function triggerDBSave() {
+    saveDB(); // আপনার গ্লোবাল IndexedDB সেভ ফাংশন কল করা
+}
+
+function updateMasterItem(key, type, idx, field, val) {
+    if (!db[key] || !db[key][type] || !db[key][type][idx]) return;
+    db[key][type][idx][field] = val;
+    db[key][type][idx].updatedAt = new Date().toISOString();
+    triggerDBSave();
+    renderMasterContent();
+}
+
+function toggleMasterTask(key, idx) {
+    const item = db[key].tasks[idx];
+    item.status = (item.status === 'done') ? 'pending' : 'done';
+    item.updatedAt = new Date().toISOString();
+    triggerDBSave();
+    renderMasterContent();
+}
+
+function skipMasterTask(key, idx) {
+    const item = db[key].tasks[idx];
+    item.status = (item.status === 'skip') ? 'pending' : 'skip';
+    item.updatedAt = new Date().toISOString();
+    triggerDBSave();
+    renderMasterContent();
+}
+
+function toggleMasterPin(key, type, idx) {
+    if (!db[key] || !db[key][type] || !db[key][type][idx]) return;
+    db[key][type][idx].isPinned = !db[key][type][idx].isPinned;
+    db[key][type][idx].updatedAt = new Date().toISOString();
+    triggerDBSave();
+    renderMasterContent();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+// ৭. নির্ভুল টাইম পিকার ও এডিটর
+// ৭. নির্ভুল টাইম পিকার ও এডিটর
+function openMasterTimePicker(key, type, idx) {
+    tpTarget = { type: type.slice(0,-1), index: idx };
+    const oldSave = saveTimePicker;
+    saveTimePicker = function() {
+        if (db[key] && db[key][type] && db[key][type][idx]) {
+            db[key][type][idx].time = `${tpSel.h}:${tpSel.m}`;
+            db[key][type][idx].updatedAt = new Date().toISOString();
+            triggerDBSave();
+            closeTimePicker();
+            renderMasterContent();
+            saveTimePicker = oldSave; 
+        }
+    };
+    document.getElementById('timePicker').classList.add('open');
+}
+
+
+
+
+function openMasterNoteEditor(key, idx = null) {
+    isMasterEditNote = true;
+    masterEditingKey = key; masterEditingIdx = idx;
+
+    // এডিট মোড অন হলে প্লাস বাটনটি লুকিয়ে ফেলা হবে
+    const masterFab = document.querySelector('#masterPanel .add-fab');
+    if (masterFab) masterFab.style.setProperty('display', 'none', 'important');
+
+    const box = document.getElementById('masterContent');
+    
+    // ক্যালেন্ডারের মতো ফুল-স্ক্রিন এডিটরের জন্য কন্টেইনার অ্যাডজাস্টমেন্ট
+    box.style.display = 'flex';
+    box.style.flexDirection = 'column';
+    box.style.padding = '0';
+    box.style.height = '100%';
+
+    box.innerHTML = `
+        <!-- এডিটর কন্টেইনার (এটি স্ক্রিনের বাকি পুরো জায়গা নেবে) -->
+        <div class="editor-container" style="flex: 1; position: relative; overflow: hidden; display: flex; flex-direction: column; border-radius: 0; border: none; border-bottom: 1px solid var(--border);">
+            <div id="masterQuill" style="height: 100%; overflow-y: auto;"></div>
+        </div>
+        
+        <!-- সেভ ও ক্যানসেল বাটন (এটি সবসময় নিচে ফিক্সড থাকবে) -->
+        <div style="flex-shrink: 0; padding: 15px; background: #fff; z-index: 50; display: flex; gap: 10px; box-shadow: 0 -4px 15px rgba(0,0,0,0.08);">
+            <button onclick="saveMasterNote()" style="flex:1; background:var(--primary); color:#fff; padding:12px; border:none; border-radius:10px; font-weight:800; font-size:1rem; cursor:pointer;">
+                SAVE CHANGES
+            </button>
+            <button onclick="cancelMasterNoteEdit()" style="width:100px; background:#e2e8f0; color:var(--text-main); padding:12px; border:none; border-radius:10px; font-weight:800; font-size:0.9rem; cursor:pointer;">
+                DISCARD
+            </button>
+        </div>
+    `;
+    
+    // ফুল অপশন সহ Quill লোড করা
+    quill = new Quill('#masterQuill', { 
+        theme: 'snow', 
+        placeholder: 'Type something amazing...',
+        modules: { 
+            toolbar:[
+                [{ 'font': [] }, { 'size':['small', false, 'large', 'huge'] }],['bold', 'italic', 'underline', 'strike'],
+                [{ 'color': [] }, { 'background':[] }],[{ 'header': 1 }, { 'header': 2 }, 'blockquote', 'code-block'],[{ 'list': 'ordered'}, { 'list': 'bullet' }],[{ 'align': [] }],['link', 'image', 'video', 'formula'],
+                ['clean']
+            ]
+        } 
+    });
+
+    // স্ক্রল ফিক্স (নিচে পর্যাপ্ত জায়গা রাখার জন্য)
+    const editorContent = document.querySelector('#masterQuill .ql-editor');
+    if(editorContent) {
+        editorContent.style.paddingBottom = "200px"; 
+    }
+
+    if (idx !== null && db[key].notes[idx]) quill.clipboard.dangerouslyPasteHTML(0, db[key].notes[idx].html);
+}
+
+function cancelMasterNoteEdit() { 
+    isMasterEditNote = false; 
+    
+    // ক্যানসেল করলে কন্টেইনার স্টাইল আগের মতো করে দেওয়া
+    const box = document.getElementById('masterContent');
+    box.style.display = 'block';
+    box.style.padding = '15px';
+    
+    renderMasterContent(); 
+}
+
+
+
+
+
+
+function saveMasterNote() {
+    const html = quill.root.innerHTML;
+    const now = new Date().toISOString();
+    if (!db[masterEditingKey]) db[masterEditingKey] = { bg:'#ffffff', pins:[], tasks:[], notes:[] };
+    
+    if (masterEditingIdx !== null) {
+        db[masterEditingKey].notes[masterEditingIdx].html = html;
+        db[masterEditingKey].notes[masterEditingIdx].updatedAt = now;
+    } else {
+        db[masterEditingKey].notes.unshift({ 
+            html, bg: getRandomColor(), createdAt: now, isPinned: false 
+        });
+    }
+    triggerDBSave();
+    cancelMasterNoteEdit();
+}
+
+
+function addGeneralItem() {
+    const now = new Date().toISOString();
+    if (!db['general']) db['general'] = { bg:'#ffffff', pins: [], tasks: [], notes: [] };
+    if (curMasterTab === 'task') {
+        db['general'].tasks.unshift({ txt: '', status: 'pending', createdAt: now, isPinned: false });
+        triggerDBSave(); 
+        renderMasterContent();
+    } else if (curMasterTab === 'note') {
+        openMasterNoteEditor('general', null);
+    }
+}
+
+
+
+
+
+
+
+
+
+/* ==========================================
+   PROJECT MANAGER MODULE
+   ========================================== */
+/* ==========================================
+   ADVANCED PROJECT MANAGER MODULE (UPDATED)
+   ========================================== */
+let curProjIdx = null;
+let curProjTab = 'task';
+let projTaskFilter = 'all'; // Default Filter
+let isProjEdit = false;
+let editingProjDocIdx = null;
+let isProjDocCardView = false; // Grid/List Toggle State
+let projDocSearchQuery = '';   // Search State
+
+
+
+
+// 1. Initialize Projects Storage
+function initProjects() {
+    if (!db.projects) {
+        db.projects = []; 
+    }
+    // পুরোনো ডাটা মাইগ্রেশন (Description field না থাকলে এরর এড়াতে)
+    db.projects.forEach(p => {
+        p.tasks.forEach(t => {
+            if(!t.desc) t.desc = "";
+            if(!t.status) t.status = "pending";
+        });
+        p.docs.forEach(d => {
+            if(d.isPinned === undefined) d.isPinned = false;
+        });
+    });
+    renderProjects();
+}
+// Auto init
+setTimeout(initProjects, 500); 
+
+// 2. Render 3D Cards inside Main Page
+function renderProjects() {
+    const list = document.getElementById('projectList');
+    if(!list) return;
+    list.innerHTML = '';
+    
+    if(!db.projects.length) {
+        list.innerHTML = `<div style="font-size:0.8rem; color:var(--text-sub); padding:10px;">No projects. Tap + NEW</div>`;
+        return;
+    }
+
+    db.projects.forEach((p, i) => {
+        const pending = p.tasks.filter(t => t.status !== 'done' && t.status !== 'skip').length;
+        const total = p.tasks.length;
+        const percent = total === 0 ? 0 : Math.round(((total - pending) / total) * 100);
+        
+        const card = document.createElement('div');
+        card.className = 'proj-3d-card';
+        card.onclick = () => openProjectPanel(i);
+        
+        card.innerHTML = `
+            <div class="p-card-title">${p.title}</div>
+            <div class="p-card-count" style="top:auto; bottom:10px; right:10px; background:${percent===100?'#dcfce7':'#e0e7ff'}; color:${percent===100?'#15803d':'#4f46e5'}">
+                ${percent}% Done
+            </div>
+            <div class="p-card-count">${pending} Active</div>
+        `;
+        list.appendChild(card);
+    });
+}
+
+// 3. Create New Project
+function createNewProject() {
+    window.parent.showPrompt("Enter Project Name:", (title) => {
+        if(!title) return;
+        db.projects.unshift({
+            title: title,
+            created: new Date().toISOString(),
+            tasks: [],
+            docs: [] 
+        });
+        saveDB();
+        renderProjects();
+    });
+}
+
+
+
+// 4. Open Project Panel
+function openProjectPanel(idx) {
+    curProjIdx = idx;
+    curProjTab = 'task'; 
+    projTaskFilter = 'all';
+    isProjEdit = false;
+    
+    const p = db.projects[idx];
+    document.getElementById('ppTitle').value = p.title;
+    document.getElementById('projectPanel').classList.add('active');
+    
+    // Reset Filters UI
+    document.querySelectorAll('#projFilters .f-chip').forEach(c => c.classList.remove('active'));
+    document.querySelector('#projFilters .f-chip:first-child').classList.add('active');
+    
+    setProjectTab('task');
+}
+
+function closeProjectPanel() {
+    document.getElementById('projectPanel').classList.remove('active');
+    curProjIdx = null;
+    renderProjects(); 
+}
+
+function updateProjectTitle(val) {
+    if(curProjIdx === null) return;
+    db.projects[curProjIdx].title = val;
+    saveDB();
+}
+
+
+
+// 5. Tab & Filter Logic
+function setProjectTab(tab) {
+    curProjTab = tab;
+    
+    document.getElementById('ppTabTask').classList.toggle('active', tab === 'task');
+    document.getElementById('ppTabDoc').classList.toggle('active', tab === 'doc');
+    document.getElementById('projFilters').style.display = (tab === 'task') ? 'flex' : 'none';
+    
+    // Update FAB Icon
+    document.getElementById('projFab').innerText = (tab === 'doc' && isProjEdit) ? '✓' : '+';
+    
+    renderProjectContent();
+}
+
+function setProjTaskFilter(filter, el) {
+    projTaskFilter = filter;
+    document.querySelectorAll('#projFilters .f-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    renderProjectContent();
+}
+
+// 6. RENDER PROJECT CONTENT (THE CORE)
+
+/* ==========================================
+   ADVANCED PROJECT RENDERER (UPDATED)
+   ========================================== */
+
+// 1. Helper: Toggle View Mode
+function toggleProjDocView() {
+    isProjDocCardView = !isProjDocCardView;
+    renderProjectContent();
+}
+
+// 2. Helper: Handle Search
+function handleProjSearch(val) {
+    projDocSearchQuery = val.toLowerCase().trim();
+    renderProjectContent();
+}
+
+// 3. MAIN RENDER FUNCTION
+// 3. MAIN RENDER FUNCTION (UPDATED FOR SCROLL FIX)
+function renderProjectContent() {
+    const box = document.getElementById('projectBody');
+    const p = db.projects[curProjIdx];
+    box.innerHTML = '';
+
+    // --- A. EDIT MODE (FULL SCREEN ADVANCED EDITOR) ---
+    if(isProjEdit && curProjTab === 'doc') {
+        if(projFab) projFab.style.setProperty('display', 'none', 'important'); 
+
+        box.innerHTML = `
+        <div class="proj-editor-wrapper">
+            <div id="projQuill"></div>
+        </div>
+        <div style="padding:10px 16px; background:#fff; border-top:1px solid var(--border); display:flex; gap:10px; position:fixed; bottom:0; left:0; right:0; z-index:100;">
+            <button onclick="saveProjDoc()" style="flex:1; background:var(--primary); color:#fff; padding:12px; border:none; border-radius:10px; font-weight:800; font-size:1rem;">SAVE DOCUMENT</button>
+            <button onclick="cancelProjEdit()" style="width:100px; background:#f1f5f9; color:var(--text-main); border:none; border-radius:10px; font-weight:700;">Cancel</button>
+        </div>`;
+        
+        quill = new Quill('#projQuill', {
+            theme: 'snow',
+            placeholder: 'Type something amazing...',
+            modules: {
+                toolbar: [
+                    [{ 'font': [] }, { 'size': ['small', false, 'large', 'huge'] }],
+                    ['bold', 'italic', 'underline', 'strike'],
+                    [{ 'color': [] }, { 'background': [] }],
+                    [{ 'header': 1 }, { 'header': 2 }, 'blockquote', 'code-block'],
+                    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                    [{ 'align': [] }],
+                    ['link', 'image', 'video', 'formula'],
+                    ['clean']
+                ]
+            }
+        });
+
+        if(editingProjDocIdx !== null && p.docs[editingProjDocIdx]) {
+            quill.clipboard.dangerouslyPasteHTML(0, p.docs[editingProjDocIdx].html);
+        }
+        return;
+    }
+
+    // --- B. TASK VIEW ---
+    if(curProjTab === 'task') {
+        let tasks = p.tasks.map((t, i) => ({...t, oIdx: i}));
+        if(projTaskFilter !== 'all') {
+            if(projTaskFilter === 'pending') tasks = tasks.filter(t => t.status === 'pending');
+            else tasks = tasks.filter(t => t.status === projTaskFilter);
+        }
+        if(!tasks.length) {
+            box.innerHTML = `<div style="text-align:center; margin-top:50px; color:var(--text-sub);">No ${projTaskFilter} tasks.</div>`;
+            return;
+        }
+        tasks.forEach(t => {
+            const isDone = t.status === 'done';
+            const isSkip = t.status === 'skip';
+            box.innerHTML += `
+            <div class="card ${t.status}" style="border-left: 4px solid ${isDone?'var(--success)':(isSkip?'var(--skip)':'var(--primary)')};">
+                <div class="card-check" onclick="toggleProjTask(${t.oIdx})" style="background:${isDone?'var(--success)':'transparent'}; border-color:${isDone?'var(--success)':'var(--border)'}">
+                     ${isDone ? '<svg style="width:14px;fill:white"><use href="#icon-check"/></svg>' : ''}
+                </div>
+                <div class="card-content">
+
+		    <textarea class="inp-flat" rows="1" style="background:transparent; border:none; padding:0; font-weight:700; font-size:0.95rem; color:var(--text-main); width:100%; line-height: 1.4;" placeholder="Task Title" oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updProjTask(${t.oIdx}, 'txt', this.value)">${t.txt}</textarea>
+
+		    <textarea class="proj-desc-inp" rows="1" placeholder="Add description..." oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updProjTask(${t.oIdx}, 'desc', this.value)">${t.desc || ''}</textarea>
+
+
+
+                </div>
+                <div style="display:flex; flex-direction:column; gap:2px;">
+                     <button onclick="skipProjTask(${t.oIdx})" style="font-size:0.6rem; padding:4px 8px; border-radius:4px; background:#f1f5f9; border:none; color:var(--text-sub); font-weight:700;">${isSkip?'RESET':'SKIP'}</button>
+                     <button onclick="delProjItem('task', ${t.oIdx})" style="color:var(--danger); background:none; border:none; font-size:1.2rem; line-height:1;">×</button>
+                </div>
+            </div>`;
+        });
+    } 
+    
+    // --- C. ADVANCED DOCS VIEW (SCROLL FIXED) ---
+    else {
+        const controls = `
+        <div class="proj-controls">
+            <input type="text" class="proj-search-inp" placeholder="Search docs..." value="${projDocSearchQuery}" oninput="handleProjSearch(this.value)">
+            <button class="proj-view-btn" onclick="toggleProjDocView()">
+                ${isProjDocCardView ? 
+                  '<svg style="width:18px;height:18px;fill:currentColor"><use href="#icon-layer"/></svg>' : 
+                  '<svg style="width:18px;height:18px;fill:currentColor"><use href="#icon-full"/></svg>'
+                }
+            </button>
+        </div>`;
+        box.innerHTML = controls;
+
+        let docs = p.docs.map((d, i) => ({...d, oIdx: i}));
+        if(projDocSearchQuery) {
+            docs = docs.filter(d => d.html.toLowerCase().includes(projDocSearchQuery));
+        }
+
+        const pinnedDocs = docs.filter(d => d.isPinned);
+        const otherDocs = docs.filter(d => !d.isPinned);
+
+        if(!docs.length) {
+            box.innerHTML += `<div style="text-align:center; margin-top:50px; color:var(--text-sub);"><div style="font-size:2rem;">📂</div>No documents found.</div>`;
+            return;
+        }
+
+        // --- SCROLL FIX HERE ---
+        // overflow-y: auto ব্যবহার করা হয়েছে
+        const renderDocCard = (d) => `
+            <div class="sticker" style="background:${d.bg || '#fff'}; border:${d.isPinned ? '2px solid #f59e0b' : '1px solid var(--border)'}; box-shadow:${d.isPinned ? '0 4px 15px rgba(245, 158, 11, 0.2)' : 'var(--shadow-card)'}">
+                <div class="sticker-actions" style="background:rgba(255,255,255,0.9);">
+                    <button class="st-btn" onclick="toggleProjPin(${d.oIdx})" style="color:${d.isPinned?'#f59e0b':'var(--text-sub)'}">${d.isPinned ? '📌' : '📍'}</button>
+                    <button class="st-btn edit" onclick="startProjEdit(${d.oIdx})">✎</button>
+                    <button class="st-btn del" onclick="delProjItem('doc', ${d.oIdx})">×</button>
+                </div>
+                
+                <div class="ql-editor" style="padding:0; max-height:${isProjDocCardView ? 'none' : '200px'}; overflow-y:${isProjDocCardView ? 'visible' : 'auto'};">
+                    ${highlight(d.html, projDocSearchQuery)}
+                </div>
+
+                <div class="meta-info" style="margin-top:8px; padding-top:5px; border-top:1px solid rgba(0,0,0,0.05); text-align:right;">
+                    ${d.created ? new Date(d.created).toLocaleDateString() : ''}
+                </div>
+            </div>`;
+
+        const gridClass = isProjDocCardView ? 'proj-doc-list' : 'sticker-grid';
+        let htmlContent = `<div style="padding: 0 16px 80px 16px;">`; 
+
+        if(pinnedDocs.length > 0) {
+            htmlContent += `
+            <div class="pinned-header" style="margin-top:10px;">
+                <div class="pin-label">📌 PINNED DOCS</div>
+                <div class="${gridClass}">
+                    ${pinnedDocs.map(renderDocCard).join('')}
+                </div>
+            </div>`;
+        }
+
+        if(otherDocs.length > 0) {
+            htmlContent += `
+            <div style="margin-top:15px;">
+                <div class="group-label">ALL FILES (${otherDocs.length})</div>
+                <div class="${gridClass}">
+                    ${otherDocs.map(renderDocCard).join('')}
+                </div>
+            </div>`;
+        }
+        
+        htmlContent += `</div>`;
+        box.innerHTML += htmlContent;
+    }
+
+autoResizeAll();
+
+}
+
+
+
+
+
+
+
+
+
+// 4. Start Edit (UI Fix)
+function startProjEdit(idx) {
+    isProjEdit = true;
+    editingProjDocIdx = idx;
+    // FAB আইকন পরিবর্তন
+    const fab = document.getElementById('projFab');
+    if(fab) fab.innerText = '✓'; // অথবা 'Save'
+    
+    // এডিটর মোড অন হলে বডি স্ক্রল টপে নেওয়া
+    document.getElementById('projectBody').scrollTop = 0;
+    
+    renderProjectContent();
+}
+
+// 5. Save Function (Validation Fix)
+
+
+// saveProjDoc এর ভেতরে
+function saveProjDoc() {
+    if(!quill) return;
+    const html = quill.root.innerHTML;
+    const txt = quill.getText().trim();
+    const hasContent = txt.length > 0 || html.includes('<img') || html.includes('<iframe') || html.includes('katex');
+
+    if(!hasContent) {
+        window.parent.showAlert("Empty Document", "Please write something before saving!");
+        return;
+    }
+
+
+    const p = db.projects[curProjIdx];
+    const now = new Date().toISOString();
+
+    if(editingProjDocIdx !== null) {
+        p.docs[editingProjDocIdx].html = html;
+        p.docs[editingProjDocIdx].updated = now; // আপডেট টাইমস্ট্যাম্প
+    } else {
+        p.docs.unshift({ 
+            html: html, 
+            bg: getRandomColor(),
+            isPinned: false,
+            created: now,
+            updated: now
+        });
+    }
+    saveDB();
+    cancelProjEdit();
+}
+
+
+
+
+// 7. Data Manipulation Functions
+function addProjectItem() {
+    if(curProjTab === 'task') {
+        db.projects[curProjIdx].tasks.push({ 
+            txt: '', desc: '', status: 'pending' 
+        });
+        saveDB();
+        renderProjectContent();
+    } else {
+        startProjEdit(null); // Open Editor for new doc
+    }
+}
+
+function updProjTask(idx, field, val) {
+    db.projects[curProjIdx].tasks[idx][field] = val;
+    saveDB();
+}
+
+function toggleProjTask(idx) {
+    const t = db.projects[curProjIdx].tasks[idx];
+    t.status = t.status === 'done' ? 'pending' : 'done';
+    saveDB();
+    renderProjectContent();
+}
+
+function skipProjTask(idx) {
+    const t = db.projects[curProjIdx].tasks[idx];
+    t.status = t.status === 'skip' ? 'pending' : 'skip';
+    saveDB();
+    renderProjectContent();
+}
+
+// 8. Doc Logic (Pinning & Editing)
+function toggleProjPin(idx) {
+    const d = db.projects[curProjIdx].docs[idx];
+    d.isPinned = !d.isPinned;
+    saveDB();
+    renderProjectContent();
+}
+
+
+
+
+
+function cancelProjEdit() {
+    isProjEdit = false;
+    editingProjDocIdx = null;
+    
+    // বাটন আবার দেখান
+    const projFab = document.getElementById('projFab');
+    if(projFab) projFab.style.setProperty('display', 'flex', 'important');
+    if(projFab) projFab.innerText = '+';
+    
+    renderProjectContent();
+}
+
+
+
+// ১. মাস্টার আইটেম ডিলিট
+function deleteMasterItem(key, type, idx) {
+    window.parent.showConfirm("Delete Item?", "Are you sure? This will permanently remove the item.", () => {
+        db[key][type].splice(idx, 1);
+        triggerDBSave();
+        renderMasterContent();
+    });
+}
+
+// ২. পুরো প্রজেক্ট ডিলিট
+function deleteCurrentProject() {
+    window.parent.showConfirm("Delete Project?", "Delete this entire project? This action is irreversible!", () => {
+        db.projects.splice(curProjIdx, 1);
+        saveDB();
+        closeProjectPanel();
+    });
+}
+
+// ৩. প্রজেক্টের ভেতরের আইটেম (Task/Doc) ডিলিট
+function delProjItem(type, idx) {
+    window.parent.showConfirm("Remove Item?", "Are you sure you want to remove this item?", () => {
+        const p = db.projects[curProjIdx];
+        if(type === 'task') p.tasks.splice(idx, 1);
+        else p.docs.splice(idx, 1);
+        saveDB();
+        renderProjectContent();
+    });
+}
+
+
+
+</script>
+</body>
+</html>
